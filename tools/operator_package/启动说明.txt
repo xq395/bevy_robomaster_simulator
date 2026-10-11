@@ -1,0 +1,122 @@
+NHS 操作手终端 · 使用说明
+========================
+
+这是什么
+--------
+浏览器操作手终端，配合 Daedalus 模拟器使用：
+  - 网页控制（指挥 / 全手动接管，WASD + 方向键 + J）
+  - 车载画面（经图像桥接与压缩预览）
+  - 自车小地图（模拟器真值）
+  - H.264 窄带图传测试
+  - RMU2026 V2.0.0 自定义客户端：MQTT 裁判数据、UDP 3334 HEVC 图传、HUD 与键鼠控制
+
+它不是模拟器内部插件，是独立程序。模拟器需已包含操作手控制接口与
+图像发布功能，否则网页无法接管、也没有画面。
+
+前置条件
+--------
+1. 模拟器模式需要 Windows 10/11 64 位；比赛 RMU 模式应使用 Linux（制作规范 S87）。
+2. 已安装 Python 3.11（安装时勾选 Add to PATH）。
+3. 先启动（模拟器模式）模拟器，再启动本终端。
+4. 模拟器的 TALOS_SHM_DIR 必须与本包一致（见下）。
+
+首次安装依赖
+------------
+打开本目录的命令行，执行：
+
+  python -m pip install -r requirements.txt
+
+若 python 不在 PATH，请在 operator_config.json 的 "python" 字段填写
+完整路径，例如 "C:\\Users\\你\\AppData\\Local\\Programs\\Python\\Python311\\python.exe"。
+
+启动
+----
+双击 Start.bat，或在 PowerShell 中运行：
+
+  powershell -ExecutionPolicy Bypass -File .\run_operator.ps1
+
+只检查环境、不启动服务：
+
+  powershell -ExecutionPolicy Bypass -File .\run_operator.ps1 -Check
+
+启动后打开：
+
+  操作手页面   http://127.0.0.1:5002/
+  算法调试页   http://127.0.0.1:5000/
+
+按 Ctrl+C 结束全部服务。无画面时可加 -NoBridge 跳过图像桥接。
+
+RMU2026 模式
+------------
+比赛部署请在 Linux 上运行：
+
+  ./run_operator.sh
+
+它连接配置中的 MQTT 裁判系统（默认 192.168.12.1:3333），并监听 UDP 3334 HEVC
+图传。页面打开后选择“裁判系统图传”。Windows 也可用：
+
+  powershell -ExecutionPolicy Bypass -File .\run_operator.ps1 -Mode rmu
+
+本地联调使用 Mock：
+
+  ./run_operator.sh --mock
+  Start.bat -Mode rmu-mock
+
+RMU 模式不启动 Windows 图像桥接。接管前不会发送 KeyboardMouseControl；断开连接、
+释放接管或 250 ms 没有新输入时会发送零输入。
+
+网络与安全
+----------
+- MQTT 按 RM2026 协议不使用用户名、密码和 TLS，应放在比赛专用网络中。
+- Mock broker 只绑定 127.0.0.1 且无认证，不得暴露到比赛网络。
+- 客户端 UDP 3334 默认绑定 0.0.0.0，建议用防火墙限制来源。
+- 当前尚未用真实引擎验证 RadarInfoToClient 字段布局、MapClick 坐标单位/字段语义和
+  鼠标滚轮灵敏度；Mock 联调不能替代实机联调。
+
+共享目录（重要）
+----------------
+模拟器、图像桥接必须使用同一个共享目录。若模拟器启动了
+TALOS_SHM_DIR 环境变量，本终端也必须使用同一个值：
+
+  set TALOS_SHM_DIR=D:\talos_shm
+  Start.bat
+
+若模拟器未设置该变量，会使用系统临时目录下的 talos_shm，本终端默认
+与之相同。启动日志会打印实际使用的路径，请与模拟器核对。
+
+目录结构
+--------
+  Start.bat              启动入口
+  run_operator.ps1       启动脚本（可带参数）
+  operator_config.json   端口 / 目录 / 桥接开关
+  requirements.txt       Python 依赖
+  app\                   操作手网页、服务与中继
+  bridge\                图像桥接程序、运行库、模型与配置
+  web_frontend\          算法调试页前端
+  runtime\debug_web\     图像共享文件（运行后生成）
+
+配置说明（operator_config.json）
+--------------------------------
+  python          Python 路径，留空自动查找
+  shm_dir         共享目录，留空用 TALOS_SHM_DIR 或临时目录
+  sim_udp_port    模拟器控制端口，默认 5001
+  video_port      图像/调试服务端口，默认 5000
+  operator_port   操作手页面端口，默认 5002
+  bridge_web_hz   图像发布频率，默认 5
+  send            是否向模拟器发送云台指令（默认 true）
+  allow_fire      是否允许桥接触发射击（默认 true，参与比赛前请确认）
+  start_bridge    是否随终端启动图像桥接
+  mode            sim、rmu 或 rmu-mock
+  rmu             MQTT 主机/端口、机器人 ID、UDP 图传主机/端口
+
+常见问题
+--------
+- 页面在线但画面一直不动：
+  图像桥接可能已退出，或共享目录不一致。看终端日志里“图像桥接已启动”
+  以及实际共享目录路径，必要时重启终端。画面超过 2 秒未更新会提示离线。
+- 能连上但按 WASD 不动：
+  确认已在网页点“接管模式控制”，并查看页面右侧“执行结果”“实际控制模式”。
+- 提示缺少 Python 依赖：
+  执行上面的 pip install；国内网络可加 -i 镜像。
+- 端口被占用：
+  在 operator_config.json 中改端口后重启。

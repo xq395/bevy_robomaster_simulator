@@ -1,0 +1,22 @@
+{
+  "mode": "sim",
+  "python": "",
+  "shm_dir": "",
+  "debug_web_dir": "runtime\\debug_web",
+  "sim_udp_host": "127.0.0.1",
+  "sim_udp_port": 5001,
+  "video_host": "127.0.0.1",
+  "video_port": 5000,
+  "operator_port": 5002,
+  "bridge_web_hz": 5,
+  "send": true,
+  "allow_fire": true,
+  "start_bridge": true,
+  "rmu": {
+    "mqtt_host": "192.168.12.1",
+    "mqtt_port": 3333,
+    "robot_id": 3,
+    "video_host": "0.0.0.0",
+    "video_port": 3334
+  }
+}

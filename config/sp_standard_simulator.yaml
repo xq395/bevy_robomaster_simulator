@@ -1,0 +1,106 @@
+camera:
+  type: opencv
+  camera_id: 0
+  width: 1280
+  height: 1024
+  serial_number: ""
+  exposure: 3000.0
+  gain: 0.0
+  frame_rate: 100.0
+
+enemy_color: blue
+
+detector:
+  backend: hebei
+  model_path: ../assets/models/hebei_at_nn/praysky_coord_noe2e_0331_640x640.onnx
+  conf_threshold: 0.25
+  performance_mode: latency
+
+# Detection labels on simulator armor textures can flicker between adjacent
+# classes. Acquire immediately here; the simulator FireGate accepts the first
+# in-window TRACKING frame while retaining its PnP/NIS/ballistic/angle checks.
+min_detect_count: 1
+max_temp_lost_count: 15
+outpost_max_temp_lost_count: 75
+max_tracker_dt: 0.4
+nis_threshold: 13.277
+nis_failure_ratio: 0.4
+nis_window: 100
+process_accel_variance: 100.0
+process_yaw_accel_variance: 400.0
+measurement_variance: [0.01, 0.01, 0.01, 0.09]
+
+yaw_offset: -1.0
+pitch_offset: -1.4
+comming_angle: 60.0
+leaving_angle: 20.0
+decision_speed: 8.0
+high_speed_delay_time: 0.030
+low_speed_delay_time: 0.015
+bullet_speed: 23.0
+auto_fire: false
+
+# CLI flags remain the only authority that can enable commands or firing.
+command_enabled: false
+
+planner:
+  enabled: false
+  dt_s: 0.01
+  horizon_steps: 30
+  q_angle: 100.0
+  q_velocity: 1.0
+  r_acceleration: 0.1
+  max_yaw_acc_rad_s2: 50.0
+  max_pitch_acc_rad_s2: 100.0
+  feedback_timeout_s: 0.05
+  use_feedback_velocity: false
+
+fire_gate:
+  enabled: false
+  max_measurement_age: 0.05
+  max_reprojection: 5.0
+  max_nis: 13.277
+  min_consecutive: 1
+  min_yaw_tolerance_deg: 0.2
+  min_pitch_tolerance_deg: 0.2
+  small_armor_width: 0.135
+  large_armor_width: 0.230
+  armor_height: 0.056
+  armor_tolerance_ratio: 0.25
+
+serial:
+  enabled: true
+  device: /dev/rm_cboard
+  baud: 115200
+
+feedback_pose:
+  enabled: true
+  yaw_sign: 1.0
+  pitch_sign: 1.0
+  roll_sign: 1.0
+  order: ZYX
+  time_offset_ms: 0
+  max_age_ms: 50
+  reject_echo: true
+  echo_window_ms: 20
+
+telemetry:
+  enabled: true
+  address: 127.0.0.1
+  port: 9870
+  publish_hz: 30.0
+
+web:
+  enabled: false
+  shm_name: /hnu_vision_debug
+  quality: 80
+  publish_hz: 15.0
+
+imu_quaternion_wxyz: [1.0, 0.0, 0.0, 0.0]
+
+R_gimbal2imubody: [-1, 0, 0, 0, -1, 0, 0, 0, 1]
+camera_matrix: [1818.3669452465165, 0, 751.062265747035, 0, 1822.494494078506, 530.4367155611213, 0, 0, 1]
+distort_coeffs: [-0.07794462659956886, 0.1544782603148689, -0.0025714394278524674, 0.0008301631130127363, 0]
+max_reprojection_error_px: 5.0
+R_camera2gimbal: [-0.008319576004695461, 0.010498791137270739, 0.9999102759946804, -0.9996075613864776, -0.026835747568381807, -0.008035289131414894, 0.026748978935305992, -0.9995847227909708, 0.010717933047771133]
+t_camera2gimbal: [0.09496930183353451, 0.09500629029800668, 0.05098706629175661]

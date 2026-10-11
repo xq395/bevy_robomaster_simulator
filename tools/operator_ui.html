@@ -1,0 +1,363 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NHS Server</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0b1220;color:#dde8fa;font:16px system-ui}header{padding:20px 28px;border-bottom:1px solid #263750;display:flex;justify-content:space-between}h1{font-size:22px;margin:0}small{color:#93a7c4}main{padding:20px;display:grid;grid-template-columns:2fr 1fr;gap:18px}.panel{background:#121e30;border:1px solid #293c58;border-radius:14px;padding:18px}h2{font-size:17px;margin:0 0 15px}#video{width:100%;min-height:240px;object-fit:contain;background:#050a12;max-height:58vh}button{background:#233854;color:#e9f1ff;border:1px solid #4a6384;border-radius:8px;padding:14px;cursor:pointer;font:inherit;margin:5px 0;width:100%}button.on{background:#146e61}button.danger{background:#8d3545}button:disabled{opacity:.4;cursor:default}.row{display:flex;justify-content:space-between;gap:12px;margin:12px 0}#map{width:100%;background:#091321;border-radius:8px}#connection{color:#ffc876}#result{overflow-wrap:anywhere;font-family:monospace}.hint{line-height:1.7;color:#a5b8d1;font-size:14px}@media(max-width:850px){main{grid-template-columns:1fr}}
+header .actions{display:flex;align-items:center;gap:16px}header button{width:auto;white-space:nowrap}dialog{background:#121e30;color:#dde8fa;border:1px solid #4a6384;border-radius:14px;width:min(680px,92vw);max-height:85vh;overflow:auto;padding:24px;line-height:1.7}dialog::backdrop{background:#0009}dialog h3{font-size:16px;margin:18px 0 6px}dialog p{margin:6px 0}kbd{background:#233854;padding:2px 6px;border-radius:4px}dialog .close{width:auto;float:right;margin:0 0 8px 12px}
+.help-drawer[hidden]{display:none}.help-drawer{position:fixed;right:0;top:0;bottom:0;width:360px;overflow:auto;padding:20px;background:#121e30;border-left:1px solid #4a6384;line-height:1.7;z-index:2}.help-drawer h3{font-size:16px}.help-drawer .close{width:auto;float:right}.help-visible{padding-right:360px}.help-visible main{grid-template-columns:minmax(0,1fr)}.row{flex-wrap:wrap}#drivePad{padding:12px;border:2px solid #4a6384;border-radius:8px;margin:10px 0;cursor:pointer}#drivePad:focus{outline:2px solid #5cdbc5;background:#17463f}@media(max-width:760px){.help-visible{padding-right:0}.help-drawer{position:static;width:auto;max-height:45vh;border-bottom:1px solid #4a6384}.help-visible main{grid-template-columns:1fr}}
+</style>
+<style>
+.rmu[hidden]{display:none}.rmu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:8px 0}.rmu-card{background:#0d1726;border:1px solid #293c58;border-radius:8px;padding:8px 10px}.rmu-card span{display:block;font-size:12px;color:#93a7c4}.rmu-card b{font-size:18px}.hp{display:grid;grid-template-columns:52px 1fr 44px;gap:6px;align-items:center;font-size:13px;margin:3px 0}.hp i{display:block;height:10px;border-radius:5px;background:#1c2b40;overflow:hidden}.hp i u{display:block;height:100%;background:#35c28d;text-decoration:none}.hp.enemy i u{background:#e25b6a}.bad{color:#ff8b8b}.ok{color:#6ddcb0}#rmuEvents{max-height:160px;overflow:auto;font:12px monospace;margin:0;padding-left:18px}.cmds{display:grid;grid-template-columns:1fr 1fr;gap:6px}.cmds button{padding:9px;margin:0;font-size:14px}#rmuPad{padding:12px;border:2px solid #4a6384;border-radius:8px;margin:10px 0;cursor:crosshair;text-align:center}#rmuPad.on{border-color:#5cdbc5;background:#17463f}#video.clickable{cursor:crosshair}
+body.cockpit main{grid-template-columns:minmax(0,1fr) 310px;padding:10px;gap:10px}body.cockpit #video{height:calc(100vh - 245px);max-height:none;min-height:200px}body.cockpit main>section>.panel:nth-child(2){display:none}body.cockpit .video-settings{display:none}body.cockpit.help-visible main{grid-template-columns:minmax(0,1fr)}body.cockpit.help-visible #video{height:45vh}#fullscreenStatus{font-size:13px;color:#a5b8d1}@media(max-width:850px){body.cockpit main{grid-template-columns:1fr}body.cockpit #video{height:45vh}}
+</style>
+<header><div><h1>NHS Server</h1><small>操作手终端 · Daedalus 模拟器接入</small></div><div class="actions"><span id="connection">连接中</span><button id="helpOpen" aria-expanded="false" aria-controls="helpDrawer">操作说明</button></div></header>
+<aside id="helpDrawer" class="help-drawer" aria-labelledby="helpTitle" hidden>
+<button id="helpClose" class="close">收起</button><h2 id="helpTitle">简要操作说明</h2>
+<p>NHS Server 是操作手网页终端；Daedalus（代达罗斯）是接入的模拟器名称。</p>
+<nav class="row" aria-label="说明栏目"><a href="#simKeys" style="color:#6ddccc">模拟器键位速查</a><a href="#webHelp" style="color:#6ddccc">网页操作与图传</a></nav>
+<section id="simKeys" aria-labelledby="simKeysTitle"><h3 id="simKeysTitle">模拟器键位速查 · 原生窗口</h3>
+<table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr><th scope="col">场景</th><th scope="col">按键 → 操作</th></tr></thead><tbody>
+<tr><th scope="row">通用</th><td>F3 切视角；Esc 本地接管；F2 截图</td></tr>
+<tr><th scope="row">己方驾驶</th><td>WASD 移动；左 Shift 加速；方向键 云台；Q 小陀螺；F5 自瞄；Space 手动射击／按住授权；G 飞镖</td></tr>
+<tr><th scope="row">自由相机</th><td>WASD 移动；Space 上升；左 Ctrl 下降；按住鼠标右键 旋转</td></tr>
+<tr><th scope="row">靶车</th><td>Tab 切靶车；IJKL 移动；右 Shift 加速；U 小陀螺；C/B 云台水平；F/V 云台俯仰；[ / ] 与 ; / ' 底盘倾斜</td></tr>
+<tr><th scope="row">手柄己方</th><td>左摇杆 移动；L3 加速；右摇杆 云台；LT 精瞄；LB 小陀螺；RT 按住自瞄；RB 射击／授权；View 切视角；X 飞镖</td></tr>
+<tr><th scope="row">手柄靶车</th><td>Menu/Start 切靶车；十字键 移动；Y 小陀螺；R3+右摇杆 倾斜</td></tr>
+</tbody></table>
+<details><summary>视角与控制来源注意事项</summary>
+<p>以下按键作用于<strong>模拟器窗口</strong>。若网页正在接管，先点“撤销并停止”或在模拟器按 Esc，再使用本地控制。</p>
+<h3>视角与己方机器人</h3>
+<ul>
+<li><kbd>F3</kbd>：自由观察 → 第一人称 → 第三人称 → 自由观察。本地驾驶使用第一／第三人称；网页全手动驾驶不受模拟器观察视角限制。</li>
+<li><kbd>W A S D</kbd>：移动车辆；<kbd>左 Shift</kbd>：加速；<kbd>方向键</kbd>：手动云台。</li>
+<li><kbd>Q</kbd>：切换己方小陀螺；<kbd>F5</kbd>：切换自瞄。当前 Q 是开关，不是旧说明中的 Q/E 左右转。</li>
+<li><kbd>Space</kbd>：手动模式射击；自瞄模式按住授权自动射击，松开撤销。开启自瞄时方向键不接管云台。</li>
+<li><kbd>Esc</kbd>：撤销网页控制，关闭自瞄和小陀螺，恢复本地手动。</li>
+<li><kbd>F2</kbd>：截图；<kbd>G</kbd>：触发场景飞镖发射（需场景具备相应对象）。</li>
+</ul>
+<h3>自由观察相机</h3>
+<p><kbd>W A S D</kbd> 移动相机，<kbd>Space</kbd> 上升，<kbd>左 Ctrl</kbd> 下降，<strong>按住鼠标右键</strong>并移动鼠标改变朝向。此视角屏蔽本地机器人和靶车输入，关闭本地自瞄与己方小陀螺；网页已有的远端控制仍有效。观察相机与网页驾驶互不占用输入。</p>
+<h3>测试靶车／假人</h3>
+<p><kbd>Tab</kbd> 切换当前靶车；<kbd>I J K L</kbd> 移动，<kbd>右 Shift</kbd> 加速；<kbd>U</kbd> 切换靶车小陀螺；<kbd>C / B</kbd> 调整云台水平、<kbd>F / V</kbd> 调整俯仰。<kbd>[ / ]</kbd> 和 <kbd>; / '</kbd> 调整靶车底盘倾斜。</p>
+<p class="hint">靶车控制只在第一／第三人称下生效；自由相机不再使用 J 下降，避免同时移动靶车。</p>
+<h3>Xbox 手柄（连接模拟器）</h3>
+<p>左摇杆移动车辆，按左摇杆加速；右摇杆调整云台，LT 精细瞄准；LB 切换己方小陀螺。按住 RT 开启自瞄，RB 手动射击／自瞄时授权射击。View 切换视角，Menu/Start 切换靶车，十字键移动靶车，Y 切换靶车小陀螺，按住右摇杆并推动可调靶车倾斜，X 触发飞镖。</p>
+<p class="hint">手柄产生有效输入后接管本地自瞄来源并清除键盘 F5 的锁定状态：松开 RT 即退出手柄自瞄。再次使用键盘控制则切回键盘来源，需要重新按 F5 开启。网页接管时以网页状态为准。手柄说明采用 Xbox 标识。</p>
+</details>
+</section>
+<h3 id="webHelp">网页操作与图传 · 1. 开始操作</h3>
+<p><strong>全屏驾驶：</strong>点击顶部“全屏驾驶”，将放大画面并收起图传调参和小地图。右上角“操作说明”仍可随时展开，主画面会为抽屉让出空间。全屏不会自动接管机器人；选择全手动并接管后键盘锁定。退出全屏会撤销网页控制，重新进入需要再次接管。</p>
+<p class="hint">全屏只简化显示，不提高源画面帧率。当前源约5Hz；H.264丢包还可能等待关键帧恢复。车辆移动跟随云台朝向，松键后的减速受模拟器物理影响。</p>
+<p>确认右上角“模拟器在线”，选择控制方式，再点“接管模式控制”。观察右侧<strong>实际控制模式和实际状态</strong>，确认指令已生效。网页全手动可以在任意观察视角驾驶；模拟器 <kbd>F3</kbd> 随时切换观察视角。</p>
+<h3>2. 指挥模式</h3>
+<p>在网页切换自瞄、小陀螺。开启自瞄后，按住“授权自动射击”按钮才允许车端根据 FireGate 决定是否射击，松开撤销。驾驶仍由模拟器键盘／手柄完成。</p>
+<h3>3. 全手动接管</h3>
+<p>全手动接管后自动进入<strong>键盘已捕获</strong>：<kbd>W A S D</kbd> 移动，<kbd>方向键</kbd> 调整云台，按住 <kbd>J</kbd> 发射，无需再点任何“锁定”按钮。驾驶期间网页会拦截这些键以及 <kbd>Space</kbd>，因此页面不会滚动；<kbd>Space</kbd> 在网页不触发射击（原生模拟器仍用 Space）。<kbd>Esc</kbd> 撤销控制。点击输入框/下拉框时暂停捕获，改完自动恢复。</p>
+<p><strong>浏览器按键：</strong>网页不绑定 F2/F3/F5；F3 查找、F5 刷新仍是浏览器功能。模拟器视角切换和本地自瞄按键只在原生模拟器窗口有效。Ctrl/Alt/Meta 组合键不发送驾驶命令；驾驶区内 Esc 撤销网页控制。</p>
+<h3>4. 停止与接管</h3>
+<p>点“撤销并停止”退出网页控制；回到模拟器按 <kbd>Esc</kbd> 可恢复本地手动控制。网页失焦清空按键与射击，切换标签或心跳中断后控制会超时撤销，返回需重新接管。</p>
+<h3>5. 图传压缩测试</h3>
+<p><strong>JPEG：</strong>调整宽度、质量、FPS和载荷预算，观察清晰度与更新速度。</p>
+<p><strong>H.264：</strong>建议先选 80 kbit/s、40包/秒、0%丢包，再点“应用 H.264 测试配置”。可切回原 JPEG 对比，随后增加丢包率，观察画面年龄和恢复时间。</p>
+<p class="hint">H.264 当前为320×240、12FPS目标，源快照约5Hz；300B×40/50Hz分别为96/120 kbit/s包载荷上限。画面停住时查看“解码画面年龄”，等待关键帧可能导致冻结。测试链延迟不含源采集和浏览器显示。</p>
+<h3>6. 小地图与故障提示</h3>
+<p>小地图显示模拟器自车真值，青色是底盘方向，黄色是云台方向，网格2米。它尚无场地底图、敌方观测和点击导航。</p>
+<p>画面离线时检查 Web 桥接；能跟踪却不射击时，检查实际授权、桥接启动参数 <code>-Send -AllowFire</code> 和算法调试页中的 FireGate。不要同时启动多个图像桥。</p>
+<p class="hint">说明为非模态抽屉，可保持展开并用方向键操作；打开说明会清空当前按键，避免残留输入。</p>
+</aside>
+<main><section><div class="panel"><h2>实时画面 <small>桥接相机 · 压缩预览</small></h2>
+<label>显示链路 <select id="videoPath"><option value="jpeg">原 JPEG 预览</option><option value="h264">H.264 窄带解码结果</option><option value="rmu" id="rmuVideoOption" hidden disabled>官方图传 UDP 3334（HEVC）</option></select></label>
+<div class="row"><label>H.264 kbit/s <select id="h264rate"><option>40</option><option selected>80</option></select></label><label>300B 包频率 <select id="packetHz"><option selected>40</option><option>50</option></select></label><label>丢包 <select id="loss"><option value="0">0%</option><option value="0.01">1%</option><option value="0.03">3%</option><option value="0.05">5%</option></select></label></div>
+<button id="startNarrow">应用 H.264 测试配置（320×240 / 12FPS / 全视野）</button><p id="narrowStats" class="hint">独立 H.264 → 300B 分包 → 限频/丢包 → 解码；以下 JPEG 控件仅影响原预览。</p>
+<div class="row"><label>宽度 <select id="width"><option>320</option><option selected>640</option><option>960</option><option>1280</option></select></label><label>JPEG质量 <input id="quality" type="range" min="5" max="90" value="55"></label><label>FPS <select id="fps"><option>2</option><option selected>5</option><option>10</option></select></label><label>载荷预算 <select id="budget"><option value="0">不限</option><option value="120">120 kbit/s</option><option value="256">256 kbit/s</option><option value="512">512 kbit/s</option></select></label></div>
+<img id="video" alt="等待 Web 桥接画面"><p id="videoState" class="hint">画面来自现有桥接快照，不额外消费 Talos 图像。</p></div>
+<div class="panel rmu" id="rmuPanel" style="margin-top:18px" hidden><h2>裁判系统 <small id="rmuLinkState">RMU 协议 · 未连接</small></h2>
+<div class="rmu-grid">
+<div class="rmu-card"><span>比赛阶段</span><b id="rmuStage">—</b></div>
+<div class="rmu-card"><span>阶段剩余</span><b id="rmuCountdown">—</b></div>
+<div class="rmu-card"><span>本机血量</span><b id="rmuHp">—</b></div>
+<div class="rmu-card"><span>热量</span><b id="rmuHeat">—</b></div>
+<div class="rmu-card"><span>允许发弹量</span><b id="rmuAmmo">—</b></div>
+<div class="rmu-card"><span>己方经济</span><b id="rmuEco">—</b></div>
+<div class="rmu-card"><span>基地 / 前哨（己）</span><b id="rmuBase">—</b></div>
+<div class="rmu-card"><span>基地 / 前哨（敌）</span><b id="rmuEnemyBase">—</b></div>
+</div>
+<div class="row" style="align-items:flex-start"><div style="flex:1;min-width:220px"><h3 style="font-size:14px;margin:6px 0">己方</h3><div id="rmuAlly"></div></div><div style="flex:1;min-width:220px"><h3 style="font-size:14px;margin:6px 0">对方</h3><div id="rmuEnemy"></div></div></div>
+<p class="hint" id="rmuRespawn"></p>
+<canvas id="rmuMap" width="560" height="300" style="width:100%;background:#091321;border-radius:8px;cursor:crosshair" aria-label="场地图：点击发送地图标记"></canvas>
+<p class="hint">场地图按 28m×15m 绘制，原点在红方补给站一侧的围挡角，X 轴指向蓝方（手册 V2.0.0 坐标定义）。青色点是本机 RobotPosition，紫色点是雷达信息。场地尺寸以当届规则手册为准。</p>
+<h3 style="font-size:14px;margin:6px 0">事件 / 判罚 / 回执</h3><ol id="rmuEvents" reversed></ol>
+<p class="hint" id="rmuStats">—</p></div>
+<div class="panel" style="margin-top:18px"><h2>自车小地图 <small>模拟器真值 · 自车中心 ±10m</small></h2><canvas id="map" width="720" height="320"></canvas><div class="hint">青色：底盘方向　黄色：云台方向。网格 2m；当前为坐标网格，尚未接入场地底图及敌方观测。</div></div></section>
+<aside class="panel"><h2>控制与执行</h2><label>控制方式 <select id="mode"><option value="manual" selected>全手动接管（操作手）</option><option value="command">指挥模式</option></select></label><p class="hint" id="modeHint">全手动：WASD移动，方向键云台，J射击；自动瞄准/射击及小陀螺关闭。</p><button id="take">接管模式控制</button><button id="aim" disabled>自瞄：关闭</button><button id="spin" disabled>小陀螺：关闭</button><button id="fire" disabled>按住：授权自动射击</button><button class="danger" id="stop">撤销并停止</button>
+<div class="row"><span>实际控制模式</span><b id="actualMode">—</b></div><div class="row"><span>实际自瞄 / 小陀螺</span><b id="actual">—</b></div><div class="row"><span>实际射击授权</span><b id="authorized">—</b></div><div class="row"><span>发射计数</span><b id="shots">—</b></div><div class="row"><span>应用序号</span><b id="seq">—</b></div><div class="row"><span>数据年龄</span><b id="age">—</b></div><p id="result">等待状态</p>
+<p class="hint">指挥模式由模拟器本地驾驶；全手动模式在网页使用 WASD／方向键／J射击。详细步骤见右上角“操作说明”。</p><a href="http://127.0.0.1:5000/" target="_blank" style="color:#6ddccc">打开算法调试页 ↗</a>
+<section class="rmu" id="rmuControl" hidden><h2 style="margin-top:22px">官方协议键鼠 <small>KeyboardMouseControl 75Hz</small></h2>
+<p class="hint">比赛时键鼠来源只能二选一（官方选手端 / 自定义客户端）。接管后点击下方区域锁定鼠标；Esc 释放鼠标并把输入清零，再按一次 Esc 或点“撤销”退出。建议先全屏：浏览器才会让网页拦截 Ctrl+W 等快捷键。</p>
+<button id="rmuTake">接管键鼠（官方协议）</button>
+<div id="rmuPad" role="button" tabindex="0" aria-describedby="rmuPadHint">未接管</div>
+<p class="hint" id="rmuPadHint">锁定后：WASD、Shift、Ctrl、Q E R F G Z X C V B，鼠标移动 / 左右中键 / 滚轮，按手册位掩码发送。</p>
+<p class="hint" id="rmuInput">—</p>
+<h2 style="margin-top:18px">指令</h2>
+<div class="cmds">
+<button data-cmd='{"topic":"CommonCommand","fields":{"cmd_type":1,"param":50}}'>兑换 50 发 17mm</button>
+<button data-cmd='{"topic":"CommonCommand","fields":{"cmd_type":2,"param":5}}'>兑换 5 发 42mm</button>
+<button data-cmd='{"topic":"CommonCommand","fields":{"cmd_type":3,"param":0}}'>确认复活</button>
+<button data-cmd='{"topic":"CommonCommand","fields":{"cmd_type":4,"param":0}}'>花费金币立即复活</button>
+<button data-cmd='{"topic":"CommonCommand","fields":{"cmd_type":5,"param":0}}'>远程兑换发弹量</button>
+<button data-cmd='{"topic":"CommonCommand","fields":{"cmd_type":6,"param":0}}'>远程兑换血量</button>
+<button data-cmd='{"topic":"HeroDeployModeEventCommand","fields":{"mode":1}}'>进入部署模式</button>
+<button data-cmd='{"topic":"HeroDeployModeEventCommand","fields":{"mode":0}}'>退出部署模式</button>
+<button data-cmd='{"topic":"RuneActivateCommand","fields":{"activate":1}}'>激活能量机关</button>
+<button data-cmd='{"topic":"AirSupportCommand","fields":{"command_id":1}}'>免费空中支援</button>
+</div>
+<details><summary>哨兵 / 飞镖 / 性能体系</summary><div class="cmds">
+<button data-cmd='{"topic":"SentryCtrlCommand","fields":{"command_id":7}}'>哨兵进攻姿态</button>
+<button data-cmd='{"topic":"SentryCtrlCommand","fields":{"command_id":8}}'>哨兵防御姿态</button>
+<button data-cmd='{"topic":"SentryCtrlCommand","fields":{"command_id":9}}'>哨兵移动姿态</button>
+<button data-cmd='{"topic":"SentryCtrlCommand","fields":{"command_id":5}}'>哨兵确认复活</button>
+<button data-cmd='{"topic":"DartCommand","fields":{"target_id":1}}'>飞镖目标：前哨站</button>
+<button data-cmd='{"topic":"DartCommand","fields":{"target_id":2}}'>飞镖目标：基地固定</button>
+<button data-cmd='{"topic":"DartCommand","fields":{"open":true}}'>飞镖闸门开</button>
+<button data-cmd='{"topic":"DartCommand","fields":{"open":false}}'>飞镖闸门关</button>
+<button data-cmd='{"topic":"RobotPerformanceSelectionCommand","fields":{"shooter":1,"chassis":1}}'>冷却优先 + 血量优先</button>
+<button data-cmd='{"topic":"RobotPerformanceSelectionCommand","fields":{"shooter":2,"chassis":2}}'>爆发优先 + 功率优先</button>
+</div></details>
+<p class="hint">地图标记：在左侧“裁判系统”面板的场地图上点击，发送 MapClickCmd（下方可选身份与标记类型）。</p>
+<div class="row"><label>身份 <select id="rmuRole"><option value="gimbal">云台手（间隔 ≥0.5s）</option><option value="semi_auto">半自动操作手（间隔 ≥3s）</option></select></label><label>标记 <select id="rmuMark"><option value="1">攻击</option><option value="2">防御</option><option value="3">警戒</option></select></label></div>
+<p id="rmuCmdResult" class="hint" role="status">—</p></section></aside></main>
+<script>
+const $=id=>document.getElementById(id);let state=null,active=false,busy=false,uiVersion=null;
+const held=new Set();let mode=$('mode').value;
+const fullscreenButton=document.createElement('button');fullscreenButton.textContent='全屏驾驶';fullscreenButton.id='fullscreenButton';$('helpOpen').before(fullscreenButton);
+const fullscreenStatus=document.createElement('span');fullscreenStatus.id='fullscreenStatus';fullscreenStatus.setAttribute('role','status');fullscreenButton.before(fullscreenStatus);
+async function fullscreen(){try{if(document.fullscreenElement){await document.exitFullscreen()}else{await document.documentElement.requestFullscreen();updateCapture()}}catch{fullscreenStatus.textContent='浏览器未允许全屏，请直接点击全屏按钮重试'}}
+fullscreenButton.onclick=fullscreen;
+document.addEventListener('fullscreenchange',()=>{const enabled=!!document.fullscreenElement;document.body.classList.toggle('cockpit',enabled);fullscreenButton.textContent=enabled?'退出全屏':'全屏驾驶';fullscreenStatus.textContent=enabled?'全屏 · 右上角可展开操作说明':'';if(!enabled){held.clear();wanted={aim_enabled:false,fire_authorized:false,spin_enabled:false};send();reset()}});
+// Hide tuning widgets only in the driving layout; video and help stay available.
+for(const id of ['videoPath','h264rate','width']){const el=$(id);(el.closest('.row')||el.parentElement).classList.add('video-settings')}
+$('startNarrow').classList.add('video-settings');$('narrowStats').classList.add('video-settings');
+const drivePad=document.createElement('button');drivePad.id='drivePad';drivePad.type='button';drivePad.tabIndex=-1;drivePad.textContent='未接管键盘';$('fire').before(drivePad);
+const inputLog=document.createElement('p');inputLog.id='inputLog';inputLog.className='hint';inputLog.textContent='输入诊断：等待接管';drivePad.after(inputLog);
+const driveKeys=['KeyW','KeyA','KeyS','KeyD','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','KeyJ'];
+function typing(){const e=document.activeElement;return !!e&&(e.matches('input,select,textarea,[contenteditable="true"]')||e.isContentEditable)}
+function capturing(){return active&&mode==='manual'&&!typing()}
+function updateCapture(){const on=active&&mode==='manual';drivePad.textContent=on?'键盘已捕获 · WASD移动 / 方向键云台 / J射击 / Esc退出':'未接管键盘（全手动接管后自动捕获）';drivePad.classList.toggle('on',on);if(!on)inputLog.textContent='输入诊断：未接管'}
+let wanted={aim_enabled:false,fire_authorized:false,spin_enabled:false},session=null,lastStatus='—';
+function reset(){active=false;held.clear();wanted={aim_enabled:false,fire_authorized:false,spin_enabled:false};updateCapture();$('result').textContent='未接管';render()}
+function render(){if(state)$('actualMode').textContent=state.remote?(state.mode==='manual'?'全手动':'指挥'):'本地';for(const id of ['aim','spin','fire'])$(id).disabled=!active; $('take').disabled=!state||active;
+ $('aim').textContent='请求自瞄：'+(wanted.aim_enabled?'开启':'关闭');$('spin').textContent='请求小陀螺：'+(wanted.spin_enabled?'开启':'关闭');
+ $('aim').disabled=!active||mode==='manual';$('spin').disabled=!active||mode==='manual';$('fire').textContent=mode==='manual'?'按住：手动射击':'按住：授权自动射击';
+  $('aim').classList.toggle('on',wanted.aim_enabled);$('spin').classList.toggle('on',wanted.spin_enabled);$('fire').classList.toggle('on',wanted.fire_authorized||held.has('KeyJ'));updateCapture()}
+function manualInput(){let k=x=>held.has(x)?1:0;return mode==='manual'?{movement:[k('KeyD')-k('KeyA'),k('KeyW')-k('KeyS')],gimbal:[k('ArrowLeft')-k('ArrowRight'),k('ArrowUp')-k('ArrowDown')],shoot:held.has('KeyJ')}:{movement:[0,0],gimbal:[0,0],shoot:false}}
+// Preserve input edges while a request is in flight; identical heartbeats do not
+// build a backlog. Capture each payload now, not when its request eventually runs.
+const controlQueue=[];let inFlightBody=null;
+async function send(){
+ if(!active)return;
+ const body=JSON.stringify({session,...wanted,mode,manual:manualInput()});
+ const latest=controlQueue.length?controlQueue[controlQueue.length-1].body:inFlightBody;
+ if(body!==latest)controlQueue.push({body,at:performance.now()});
+ if(busy)return;
+ busy=true;
+ try{
+  while(controlQueue.length){
+   // Never replay old movement after a stalled connection.
+   if(performance.now()-controlQueue[0].at>250){reset();break}
+   const item=controlQueue.shift();inFlightBody=item.body;
+   const c=new AbortController(),t=setTimeout(()=>c.abort(),250);
+   try{
+    const r=await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},signal:c.signal,body:item.body});
+    lastStatus=r.status;
+    if(!r.ok){reset();break}
+   }finally{clearTimeout(t)}
+  }
+ }catch{lastStatus='超时/网络错误';reset()}
+ finally{controlQueue.length=0;inFlightBody=null;busy=false}
+}
+$('mode').onchange=()=>{held.clear();wanted={aim_enabled:false,fire_authorized:false,spin_enabled:false};mode=$('mode').value;updateCapture();send();render();$('modeHint').textContent=mode==='manual'?'全手动：WASD移动，方向键云台，J射击；自动瞄准/射击及小陀螺关闭。':'指挥：自瞄与射击授权；驾驶仍在模拟器。'};
+window.addEventListener('keydown',e=>{if(!capturing())return;if(e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();$('stop').click();return}if(e.ctrlKey||e.altKey||e.metaKey||e.isComposing||/^F\d+$/.test(e.code)||e.code==='Tab'){held.clear();send();inputLog.textContent='输入诊断：组合/功能键，已释放';return}if(e.code==='Space'){e.preventDefault();e.stopImmediatePropagation();return}if(!driveKeys.includes(e.code))return;e.preventDefault();e.stopImmediatePropagation();held.add(e.code);let m=manualInput();inputLog.textContent='输入诊断：按住 '+e.code+' · move '+JSON.stringify(m.movement)+' · gimbal '+JSON.stringify(m.gimbal)+' · shoot '+m.shoot+' · HTTP '+lastStatus;send()},true);
+window.addEventListener('keyup',e=>{if(capturing()&&(driveKeys.includes(e.code)||e.code==='Space')){e.preventDefault();e.stopImmediatePropagation()}held.delete(e.code);if(capturing()){inputLog.textContent='输入诊断：松开 '+e.code;send()}},true);
+$('mode').addEventListener('change',updateCapture);
+document.addEventListener('change',e=>{if(e.target.matches('select,input'))e.target.blur()});
+$('take').onclick=()=>{if(!state)return;session=state.session;active=true;wanted={aim_enabled:false,fire_authorized:false,spin_enabled:false};window.focus();updateCapture();render();send()};
+$('aim').onclick=()=>{wanted.aim_enabled=!wanted.aim_enabled;wanted.fire_authorized=false;render();send()};
+$('spin').onclick=()=>{wanted.spin_enabled=!wanted.spin_enabled;render();send()};
+$('fire').onpointerdown=e=>{if(!active||(mode==='command'&&!wanted.aim_enabled))return;e.preventDefault();$('fire').setPointerCapture(e.pointerId);if(mode==='manual')held.add('KeyJ');else wanted.fire_authorized=true;render();send()};
+function release(){held.clear();wanted.fire_authorized=false;render();send()}
+function showHelp(open){held.clear();send();$('helpDrawer').hidden=!open;document.body.classList.toggle('help-visible',open);$('helpOpen').setAttribute('aria-expanded',String(open))}
+$('helpOpen').onclick=()=>showHelp($('helpDrawer').hidden);
+$('helpClose').onclick=()=>{showHelp(false);$('helpOpen').focus()};
+$('fire').onpointerup=release;$('fire').onpointercancel=release;$('fire').onlostpointercapture=release;
+$('stop').onclick=()=>{held.clear();wanted={aim_enabled:false,fire_authorized:false,spin_enabled:false};send();reset()};
+document.addEventListener('visibilitychange',()=>{if(document.hidden){wanted={aim_enabled:false,fire_authorized:false,spin_enabled:false};send();reset()}});
+window.addEventListener('blur',()=>{held.clear();send()});
+function map(s){let c=$('map'),x=c.getContext('2d'),scale=16,cx=360,cy=160;x.clearRect(0,0,c.width,c.height);x.strokeStyle='#203650';
+ for(let i=0;i<c.width;i+=32){x.beginPath();x.moveTo(i,0);x.lineTo(i,c.height);x.stroke()}for(let i=0;i<c.height;i+=32){x.beginPath();x.moveTo(0,i);x.lineTo(c.width,i);x.stroke()}
+ function arrow(a,color,len){x.strokeStyle=color;x.lineWidth=4;x.beginPath();x.moveTo(cx,cy);x.lineTo(cx+Math.sin(a)*len,cy-Math.cos(a)*len);x.stroke()}
+ arrow(s.chassis_heading,'#5cdbc5',32);arrow(s.gimbal_heading,'#ffd166',58);x.fillStyle='#e8f1ff';x.beginPath();x.arc(cx,cy,6,0,7);x.fill();x.font='14px system-ui';x.fillText(`世界 X=${s.position[0].toFixed(2)}m  Z=${s.position[1].toFixed(2)}m`,14,24)}
+async function poll(){try{let r=await fetch('/api/state'),d=await r.json();if(d.ui_version){if(uiVersion&&d.ui_version!==uiVersion){location.reload();return}uiVersion=d.ui_version}if(d.age_ms>600||!d.state||d.error)throw Error('模拟器离线');state=d.state;if(active&&session!==state.session)reset();$('connection').textContent='模拟器在线';$('actual').textContent=`${state.aim_enabled?'开':'关'} / ${state.spin_enabled?'开':'关'}`;$('authorized').textContent=state.fire_authorized?'已授权':'未授权';$('shots').textContent=state.shot_count;$('seq').textContent=state.applied_seq;$('age').textContent=d.age_ms+' ms';$('result').textContent=(active?(state.remote&&state.mode==='manual'?'✓ 接管生效':'✗ 指令未生效'):'未接管')+' · '+state.reason+' · 中继'+(d.controlling?'转发中':'已停')+' · 回执 '+lastStatus+' · 模拟器收到 move='+JSON.stringify(state.manual.movement)+' shoot='+state.manual.shoot;map(state);render()}catch{state=null;reset();$('connection').textContent='模拟器离线 · 已撤销控制'}finally{setTimeout(poll,120)}}
+setInterval(()=>{if(!document.hidden)send()},50);poll();
+let objectUrl=null,bytes=0,started=performance.now();
+async function image(){let begin=performance.now(),wait=1000/Number($('fps').value);try{
+  let path=$('videoPath').value,narrow=path==='h264',official=path==='rmu';if(official)wait=1000/30;
+  let r=await fetch(official?'/rmu/frame':narrow?'/narrowband/frame':`/frame?width=${$('width').value}&quality=${$('quality').value}`);if(!r.ok)throw Error();let blob=await r.blob(),budget=(narrow||official)?0:Number($('budget').value);
+ // Serialize requests and pace display by JPEG payload size; no accumulating frame queue.
+ if(budget)wait=Math.max(wait,blob.size*8/budget);
+ await new Promise(resolve=>setTimeout(resolve,Math.max(0,wait-(performance.now()-begin))));
+ if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(blob);$('video').src=objectUrl;bytes+=blob.size;
+ $('videoState').textContent=official?(window.rmuVideoText||'官方图传 3334'):narrow?'显示窄带解码结果；浏览器 JPEG 仅用于本地展示，不计入模拟链路。':`${(blob.size/1024).toFixed(1)} KB/帧 · 载荷均速 ${(bytes*8/(performance.now()-started)).toFixed(1)} kbit/s · Q=${$('quality').value} · HTTP载荷节拍模拟，非赛事链路限流；源约5Hz`;
+ }catch{let official=$('videoPath').value==='rmu';$('videoState').textContent=official?'3334 暂无画面：检查赛事引擎 / Mock 是否在推流，UDP 3334 是否被占用或被防火墙拦截':'画面离线：请启动 Web 桥接';wait=official?500:1500}setTimeout(image,Math.max(0,wait-(performance.now()-begin)))}
+for(const id of ['width','quality','fps','budget'])$(id).addEventListener('change',()=>{bytes=0;started=performance.now()});image();
+$('startNarrow').onclick=async()=>{try{let r=await fetch('/api/narrowband',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({width:320,height:240,fps:12,bitrate:Number($('h264rate').value),packet_hz:Number($('packetHz').value),loss:Number($('loss').value)})});if(!r.ok)throw Error();$('videoPath').value='h264'}catch{$('narrowStats').textContent='配置失败'}};
+window.rmuVideoSelected=()=>$('videoPath').value==='rmu';
+async function narrowPoll(){try{let s=await(await fetch('/api/narrowband')).json();if(s.status)$('narrowStats').textContent=`${s.status} · 编码 ${s.encoded_kbps??0} kbit/s · 含包头/填充 ${s.wire_kbps??0} kbit/s · 解码 ${s.decoded_fps??0} FPS · 测试链延迟 ${s.pipeline_ms??'—'} ms · 解码画面年龄 ${s.decoded_age_ms??'—'} ms · 丢包 ${s.dropped_packets??0}/${s.packets??0} · 最近恢复 ${s.last_recovery_ms??'—'} ms（不含源采集与浏览器延迟）`}catch{}setTimeout(narrowPoll,500)}narrowPoll();
+</script>
+<script>
+// ===== RMU2026 官方协议：裁判系统 HUD + KeyboardMouseControl + 指令 =====
+// 与上面的模拟器 UDP 控制互斥：官方键鼠接管时撤销模拟器接管，反之亦然。
+(()=>{
+const $=id=>document.getElementById(id);
+const STAGES=['未开始','准备阶段','15秒自检','5秒倒计时','比赛中','结算中'];
+const UNITS=['英雄1','工程2','步兵3','步兵4','哨兵7'];
+const FIELD={w:28,h:15};
+let rmu=null,driving=false,locked=false,sending=false;
+const keys=new Set(),mouse={x:0,y:0,z:0},buttons={left:false,right:false,mid:false};
+const RMU_KEYS=new Set(['KeyW','KeyS','KeyA','KeyD','ShiftLeft','ShiftRight','ControlLeft','ControlRight','KeyQ','KeyE','KeyR','KeyF','KeyG','KeyZ','KeyX','KeyC','KeyV','KeyB']);
+function post(path,body){return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
+function clearInput(){keys.clear();mouse.x=mouse.y=mouse.z=0;buttons.left=buttons.right=buttons.mid=false}
+function text(id,v){const el=$(id);if(el.textContent!==String(v))el.textContent=v}
+function msg(name){return rmu&&rmu.messages&&rmu.messages[name]?rmu.messages[name].data:null}
+function age(name){return rmu&&rmu.messages&&rmu.messages[name]?rmu.messages[name].age_ms:null}
+
+// ---------- 接管 / 撤销 ----------
+async function setDriving(on){
+ if(on&&$('stop'))$('stop').click();  // 撤销模拟器 UDP 接管，避免双源
+ clearInput();
+ try{const r=await post('/api/rmu/drive',{on});const d=await r.json();if(!r.ok)throw Error(d.error||r.status);driving=on}
+ catch(e){driving=false;text('rmuCmdResult','接管失败：'+e.message)}
+ if(!driving&&document.pointerLockElement)document.exitPointerLock();
+ renderPad();
+}
+function renderPad(){
+ const pad=$('rmuPad');pad.classList.toggle('on',driving&&locked);
+ pad.textContent=!driving?'未接管':locked?'鼠标已锁定 · Esc 释放':'已接管 · 点击此处锁定鼠标开始操作';
+ $('rmuTake').textContent=driving?'撤销键鼠接管':'接管键鼠（官方协议）';
+ $('rmuTake').classList.toggle('danger',driving);
+}
+$('rmuTake').onclick=()=>setDriving(!driving);
+$('rmuPad').onclick=()=>{if(driving&&!locked)$('rmuPad').requestPointerLock()};
+document.addEventListener('pointerlockchange',()=>{
+ locked=document.pointerLockElement===$('rmuPad');
+ if(!locked)clearInput();   // 释放鼠标即清零，不留按住状态
+ renderPad();
+});
+// 只在锁定时拦截输入；锁定前网页其它部分照常可用。
+window.addEventListener('keydown',e=>{
+ if(!driving)return;
+ if(e.code==='Escape'){if(!locked){e.preventDefault();setDriving(false)}return} // 锁定时 Esc 由浏览器释放鼠标
+ if(!locked)return;
+ if(RMU_KEYS.has(e.code)){e.preventDefault();e.stopImmediatePropagation();keys.add(e.code)}
+ else if(e.code==='Space'||e.code.startsWith('Arrow')){e.preventDefault();e.stopImmediatePropagation()}
+},true);
+window.addEventListener('keyup',e=>{if(!driving)return;keys.delete(e.code);if(locked&&RMU_KEYS.has(e.code)){e.preventDefault();e.stopImmediatePropagation()}},true);
+document.addEventListener('mousemove',e=>{if(locked){mouse.x+=e.movementX;mouse.y-=e.movementY}}); // 手册：y 负值向下
+document.addEventListener('mousedown',e=>{if(!locked)return;e.preventDefault();if(e.button===0)buttons.left=true;else if(e.button===1)buttons.mid=true;else if(e.button===2)buttons.right=true});
+document.addEventListener('mouseup',e=>{if(e.button===0)buttons.left=false;else if(e.button===1)buttons.mid=false;else if(e.button===2)buttons.right=false});
+document.addEventListener('wheel',e=>{if(locked){e.preventDefault();mouse.z-=Math.sign(e.deltaY)}},{passive:false}); // 手册：负值向后
+document.addEventListener('contextmenu',e=>{if(locked)e.preventDefault()});
+window.addEventListener('blur',clearInput);
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&driving)setDriving(false)});
+// 模拟器接管按钮被点时，撤销官方键鼠，保持单一控制源
+$('take')&&$('take').addEventListener('click',()=>{if(driving)setDriving(false)});
+
+// 心跳 20Hz：后端 75Hz 定频发送，250ms 未刷新自动改发全零帧
+async function heartbeat(){
+ if(driving&&!sending){
+  sending=true;
+  const body={keys:locked?[...keys]:[],mouse_x:Math.round(mouse.x),mouse_y:Math.round(mouse.y),mouse_z:mouse.z,
+   buttons:locked?{...buttons}:{left:false,right:false,mid:false}};
+  mouse.x=mouse.y=mouse.z=0;
+  try{const r=await post('/api/rmu/input',body);if(!r.ok){driving=false;clearInput();if(document.pointerLockElement)document.exitPointerLock();renderPad();text('rmuCmdResult','键鼠接管已被撤销（断线或服务端拒绝）')}}
+  catch{}finally{sending=false}
+  text('rmuInput',`键 ${[...keys].map(k=>k.replace(/^Key|Left$|Right$/g,'')).join('+')||'—'} · 左键 ${buttons.left?'按下':'—'} · 右键 ${buttons.right?'按下':'—'}`);
+ }
+ setTimeout(heartbeat,50);
+}
+heartbeat();
+
+// ---------- 指令 ----------
+async function command(topic,fields,role){
+ try{const r=await post('/api/rmu/command',{topic,fields,role});const d=await r.json();
+  text('rmuCmdResult',`${topic}：${r.ok?d.result:(d.error||('HTTP '+r.status))}`)}
+ catch(e){text('rmuCmdResult',`${topic}：网络错误`)}
+}
+document.querySelectorAll('[data-cmd]').forEach(b=>b.addEventListener('click',()=>{const c=JSON.parse(b.dataset.cmd);command(c.topic,c.fields)}));
+
+// ---------- 场地图 ----------
+const canvas=$('rmuMap');
+function toField(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)/r.width*FIELD.w,y:(1-(e.clientY-r.top)/r.height)*FIELD.h}}
+canvas.addEventListener('click',e=>{
+ const p=toField(e);
+ command('MapClickCmd',{is_send_all:1,robot_id:[0,0,0,0,0,0,0],mode:Number($('rmuMark').value),type:1,
+  map_x:Math.round(p.x*100)/100,map_y:Math.round(p.y*100)/100},$('rmuRole').value);
+});
+let lastClick=null;
+function drawMap(){
+ const x=canvas.getContext('2d'),W=canvas.width,H=canvas.height,sx=W/FIELD.w,sy=H/FIELD.h;
+ x.clearRect(0,0,W,H);x.strokeStyle='#203650';x.lineWidth=1;
+ for(let i=0;i<=FIELD.w;i+=2){x.beginPath();x.moveTo(i*sx,0);x.lineTo(i*sx,H);x.stroke()}
+ for(let j=0;j<=FIELD.h;j+=2){x.beginPath();x.moveTo(0,H-j*sy);x.lineTo(W,H-j*sy);x.stroke()}
+ x.fillStyle='#e25b6a33';x.fillRect(0,0,3*sx,H);x.fillStyle='#4a8cff33';x.fillRect(W-3*sx,0,3*sx,H);
+ x.fillStyle='#93a7c4';x.font='12px system-ui';x.fillText('红方',6,14);x.fillText('蓝方',W-34,14);
+ const pos=msg('RobotPosition');
+ if(pos&&pos.x!=null){const px=pos.x*sx,py=H-pos.y*sy,a=(pos.yaw||0)*Math.PI/180;
+  x.fillStyle='#5cdbc5';x.beginPath();x.arc(px,py,7,0,7);x.fill();
+  x.strokeStyle='#5cdbc5';x.lineWidth=3;x.beginPath();x.moveTo(px,py);x.lineTo(px+Math.sin(a)*20,py-Math.cos(a)*20);x.stroke()}
+ const radar=msg('RadarInfoToClient');
+ if(radar&&radar.robot_info)radar.robot_info.forEach((r,i)=>{if(!r.target_pos_x&&!r.target_pos_y)return;
+  x.fillStyle=i<6?'#e25b6a':'#b58cff';x.beginPath();x.arc(r.target_pos_x/100*sx,H-r.target_pos_y/100*sy,5,0,7);x.fill()});
+ const click=msg('MapClickInfo');
+ if(click&&click.map_x!=null){x.strokeStyle='#ffd166';x.lineWidth=2;const cx=click.map_x*sx,cy=H-click.map_y*sy;
+  x.beginPath();x.moveTo(cx-8,cy-8);x.lineTo(cx+8,cy+8);x.moveTo(cx+8,cy-8);x.lineTo(cx-8,cy+8);x.stroke()}
+}
+
+// ---------- HUD ----------
+function hpRows(el,values,maxes,cls){
+ el.innerHTML='';values.forEach((v,i)=>{const max=maxes[i]||Math.max(v,1),row=document.createElement('div');row.className='hp '+cls;
+  row.innerHTML=`<span>${UNITS[i]}</span><i><u style="width:${Math.min(100,v/max*100)}%"></u></i><b>${v}</b>`;el.appendChild(row)})}
+const DEFAULT_MAX=[350,250,200,200,400];
+let lastEvents='';
+function renderHud(){
+ const gs=msg('GameStatus'),gu=msg('GlobalUnitStatus'),dyn=msg('RobotDynamicStatus'),st=msg('RobotStaticStatus'),lg=msg('GlobalLogisticsStatus'),rs=msg('RobotRespawnStatus');
+ text('rmuLinkState',rmu.connected?`RMU 协议 · 已连接 ${rmu.host}:${rmu.port} · clientID ${rmu.robot_id}`:`RMU 协议 · ${rmu.error||'未连接'}`);
+ $('rmuLinkState').className=rmu.connected?'ok':'bad';
+ if(gs){text('rmuStage',(STAGES[gs.current_stage]??gs.current_stage)+(gs.is_paused?'（暂停）':''));
+  const s=gs.stage_countdown_sec;text('rmuCountdown',s==null?'—':`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`)}
+ if(dyn){text('rmuHp',st?`${dyn.current_health} / ${st.max_health}`:dyn.current_health);
+  text('rmuHeat',st?`${Math.round(dyn.current_heat)} / ${st.max_heat}`:Math.round(dyn.current_heat));
+  $('rmuHeat').className=st&&dyn.current_heat>st.max_heat*0.8?'bad':'';text('rmuAmmo',dyn.remaining_ammo)}
+ if(lg)text('rmuEco',lg.remaining_economy);
+ if(gu){text('rmuBase',`${gu.base_health} / ${gu.outpost_health}`);text('rmuEnemyBase',`${gu.enemy_base_health} / ${gu.enemy_outpost_health}`);
+  const hp=gu.robot_health||[];hpRows($('rmuAlly'),hp.slice(0,5),DEFAULT_MAX,'ally');hpRows($('rmuEnemy'),hp.slice(5,10),DEFAULT_MAX,'enemy')}
+ text('rmuRespawn',rs&&rs.is_pending_respawn?`待复活：读条 ${rs.current_respawn_progress}/${rs.total_respawn_progress}${rs.can_free_respawn?' · 可免费复活':''}${rs.can_pay_for_respawn?` · 可花 ${rs.gold_cost_for_respawn} 金币立即复活`:''}`:'');
+ const items=[...(rmu.events||[]).map(e=>`${new Date(e.at*1000).toLocaleTimeString()} ${e.topic} ${JSON.stringify(e.data)}`),
+  ...(rmu.commands||[]).map(c=>`${new Date(c.at*1000).toLocaleTimeString()} ↑${c.topic} ${c.result}`)].sort().slice(-12).reverse();
+ const joined=items.join('\n');if(joined!==lastEvents){lastEvents=joined;const ol=$('rmuEvents');ol.innerHTML='';items.forEach(t=>{const li=document.createElement('li');li.textContent=t;ol.appendChild(li)})}
+ const v=rmu.video,dynAge=age('RobotDynamicStatus');
+ window.rmuVideoText=v?`官方图传 3334 · ${v.width}×${v.height} · ${v.fps} FPS · ${v.kbps} kbit/s · 画面年龄 ${v.frame_age_ms??'—'} ms · 残帧 ${v.incomplete} · 坏包 ${v.bad_packets} · 解码错误 ${v.decode_errors}${v.error?' · '+v.error:''}`:'图传未启用';
+ text('rmuStats',`键鼠已发 ${rmu.sent_keyboard} 帧（其中零帧 ${rmu.zero_frames}）· 动态数据年龄 ${dynAge??'—'} ms · 解析失败 ${rmu.decode_errors}`);
+ drawMap();
+}
+async function poll(){
+ try{const d=await(await fetch('/api/rmu/state')).json();
+  if(d.enabled===false){setTimeout(poll,3000);return}
+  rmu=d;for(const id of ['rmuPanel','rmuControl'])$(id).hidden=false;
+  const opt=$('rmuVideoOption');opt.hidden=false;opt.disabled=false;
+  if(driving&&!d.driving){driving=false;clearInput();if(document.pointerLockElement)document.exitPointerLock();renderPad();text('rmuCmdResult','键鼠接管已撤销：'+(d.error||'服务端撤销'))}
+  renderHud();
+ }catch{}
+ setTimeout(poll,200);
+}
+renderPad();poll();
+})();
+</script></html>
