@@ -1,0 +1,10 @@
+{
+  "channel": "default",
+  "bind": "127.0.0.1",
+  "operator_port": 5001,
+  "video_port": 5000,
+  "client_port": 5002,
+  "tolerance_deg": 0.45,
+  "python": "",
+  "godot": ""
+}

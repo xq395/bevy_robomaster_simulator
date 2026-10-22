@@ -1,0 +1,67 @@
+diff --git a/scripts/local_ipc.gd b/scripts/local_ipc.gd
+index e81be37..85af001 100644
+--- a/scripts/local_ipc.gd
++++ b/scripts/local_ipc.gd
+@@ -13,15 +13,29 @@ static func valid_name(value: String) -> bool:
+ 	return true
+ 
+ 
++## Linux keeps the upstream tmpfs mailbox; other platforms use the per-user OS
++## temp directory, which has the same "same machine, same user" property.
++static func channel_root() -> String:
++	return "/dev/shm" if OS.get_name() == "Linux" else OS.get_temp_dir()
++
++
++static func process_alive(pid: int) -> bool:
++	if pid <= 0:
++		return false
++	if OS.get_name() == "Linux":
++		return FileAccess.file_exists("/proc/%d/status" % pid)
++	return OS.is_process_running(pid)
++
++
+ func setup(channel: String) -> Error:
+-	if OS.get_name() != "Linux" or not valid_name(channel):
++	if not valid_name(channel):
+ 		return ERR_INVALID_PARAMETER
+-	directory = "/dev/shm/rm_aim_sim_" + channel
++	directory = channel_root().path_join("rm_aim_sim_" + channel)
+ 	var error = DirAccess.make_dir_absolute(directory)
+ 	if error not in [OK, ERR_ALREADY_EXISTS]:
+ 		return error
+ 	# 448 is Unix 0700; only this user can access the mailbox directory.
+-	if FileAccess.set_unix_permissions(directory, 448) != OK:
++	if OS.get_name() == "Linux" and FileAccess.set_unix_permissions(directory, 448) != OK:
+ 		return ERR_UNAUTHORIZED
+ 	var lock_path = directory.path_join("server.lock")
+ 	error = DirAccess.make_dir_absolute(lock_path)
+@@ -29,7 +43,7 @@ func setup(channel: String) -> Error:
+ 		var owner = read_json("server.lock/owner.json")
+ 		# Never take over a live publisher, or a publisher still creating its owner file.
+ 		var pid = int(owner.get("pid", 0))
+-		if pid <= 0 or FileAccess.file_exists("/proc/%d/status" % pid):
++		if pid <= 0 or process_alive(pid):
+ 			return ERR_ALREADY_IN_USE
+ 		DirAccess.remove_absolute(lock_path.path_join("owner.json"))
+ 		DirAccess.remove_absolute(lock_path)
+@@ -75,7 +89,19 @@ func write_bytes(filename: String, value: PackedByteArray) -> Error:
+ 		DirAccess.remove_absolute(path + ".tmp")
+ 		return error
+ 	# Publish only completed data. Readers holding the previous inode can finish safely.
+-	return DirAccess.rename_absolute(path + ".tmp", path)
++	error = DirAccess.rename_absolute(path + ".tmp", path)
++	if error != OK and OS.get_name() == "Windows":
++		# Windows refuses to replace a file another process still holds open, so a
++		# reader that has not closed the previous value yet reports a sharing
++		# violation instead of the POSIX "swap the inode" result. Retry briefly.
++		for _attempt in range(4):
++			OS.delay_usec(1000)
++			error = DirAccess.rename_absolute(path + ".tmp", path)
++			if error == OK:
++				return OK
++	if error != OK:
++		DirAccess.remove_absolute(path + ".tmp")
++	return error
+ 
+ 
+ func close() -> void:

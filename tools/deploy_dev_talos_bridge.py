@@ -273,8 +273,8 @@ class HebeiDetector:
         output_shape = tuple(int(v) for v in model.output().shape)
         if input_shape != (1, 3, 640, 640):
             raise RuntimeError(f"Hebei input must be [1,3,640,640], got {input_shape}")
-        if output_shape != (1, 30, 18):
-            raise RuntimeError(f"Hebei output must be [1,30,18], got {output_shape}")
+        if len(output_shape) != 3 or output_shape[0] != 1 or output_shape[2] != 18:
+            raise RuntimeError(f"Hebei output must be [1,N,18], got {output_shape}")
         self.compiled = core.compile_model(model, device)
         self.output = self.compiled.output(0)
         self.confidence = confidence
@@ -289,7 +289,8 @@ class HebeiDetector:
         canvas[pad_y : pad_y + resized_height, pad_x : pad_x + resized_width] = resized
         rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
         tensor = np.ascontiguousarray(np.transpose(rgb, (2, 0, 1))[None, ...])
-        output = np.asarray(self.compiled([tensor])[self.output]).reshape(30, 18)
+        # 行数随模型导出而变（旧 30 行预分配，新 yolo26 是 300 行），按实际形状读
+        output = np.asarray(self.compiled([tensor])[self.output]).reshape(-1, 18)
 
         detections: list[dict[str, Any]] = []
         for row in output:
@@ -316,6 +317,176 @@ class HebeiDetector:
                  "large": class_id >= 6, "box": (x1, y1, x2, y2), "points": points}
             )
         return detections
+
+
+def _register_cuda_dlls():
+    """把 PyTorch 自带的 CUDA 12 运行库加进 DLL 搜索路径。
+
+    onnxruntime-gpu 需要 cublasLt64_12.dll，本机没装 CUDA Toolkit，但
+    PyTorch 2.5.1+cu121 的 torch/lib 里有一整套（实测 rp0526：CPU 40 ms/帧、
+    CUDA 9.4 ms，4.3 倍）。必须在 import onnxruntime 之前调用。
+    """
+    if os.name != "nt" or getattr(_register_cuda_dlls, "done", False):
+        return
+    _register_cuda_dlls.done = True
+    try:
+        import torch
+        libdir = os.path.join(os.path.dirname(torch.__file__), "lib")
+        if os.path.isdir(libdir):
+            os.environ["PATH"] = libdir + os.pathsep + os.environ.get("PATH", "")
+            if hasattr(os, "add_dll_directory"):
+                os.add_dll_directory(libdir)
+    except Exception:
+        pass
+
+
+class Rp0526Detector:
+    """深大 RobotPilots rp0526（魔改 YOLOv5 + MobileNetV3）的解码。
+    输出 [1, 25200, 22]：4 个角点（8） + conf（1, 需 sigmoid） + 颜色（4） + 数字（9）。
+    和 HebeiDetector 的差别只在 decode：输入要 float16、letterbox 是左上对齐（不居中），
+    角点存储顺序同样是 TL/BL/BR/TR，取用时要换成 TL/TR/BR/BL。
+
+    来源：深圳大学 RobotPilots 开源（broalantaps/RobotDetectionModel），
+    解码按 sp_vision 的 yolo5.cpp；本机 `D:/HNU_RM/test_rp0526.py` 里有同款参考实现。
+    """
+
+    COLORS = ("red", "blue", "grey", "purple")
+    # G(哨兵), 1..5, O(前哨站), Bs(基地小), Bb(基地大)
+    LARGE_CLASSES = {6, 7, 8}
+
+    def __init__(self, model_path: Path, confidence: float, device: str):
+        self.confidence = confidence
+        self.session = None
+        # device=cuda/gpu/ort：走 onnxruntime（可挂 CUDA/TensorRT）。OpenVINO 在本机
+        # 只有 CPU，40 ms/帧把视觉节拍压在 20 Hz；ORT+CUDA 是提到 60 Hz 的关键。
+        if str(device).lower() in ("cuda", "gpu", "ort"):
+            _register_cuda_dlls()
+            import onnxruntime as ort
+            options = ort.SessionOptions()
+            options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            self.session = ort.InferenceSession(
+                str(model_path), options, providers=["CUDAExecutionProvider",
+                                                     "CPUExecutionProvider"])
+            model_input = self.session.get_inputs()[0]
+            self.input_name = model_input.name
+            self.output_name = self.session.get_outputs()[0].name
+            self.input_dtype = np.float16 if "float16" in model_input.type else np.float32
+            shape = [int(v) for v in model_input.shape if isinstance(v, int)]
+            if shape and shape[-2:] != [640, 640]:
+                raise RuntimeError(f"rp0526 input must be 640x640, got {model_input.shape}")
+            return
+        core = Core()
+        model = core.read_model(str(model_path))
+        input_shape = tuple(int(v) for v in model.input().shape)
+        output_shape = tuple(int(v) for v in model.output().shape)
+        if input_shape != (1, 3, 640, 640):
+            raise RuntimeError(f"rp0526 input must be [1,3,640,640], got {input_shape}")
+        if len(output_shape) != 3 or output_shape[2] != 22:
+            raise RuntimeError(f"rp0526 output must be [1,N,22], got {output_shape}")
+        # 让 OpenVINO 自己吃 uint8 NHWC 并做 /255 + NCHW 转换：省掉 Python 侧
+        # 1.2M 像素的 float32 转换（实测 ~10 ms，比推理还贵）。
+        # 注意：这条默认关闭——实测 scale 语义把输出打成饱和（816 个 conf=1.0），
+        # 且单帧 370 ms，等查清再开。RP0526_OPENVINO_PP=1 可复现。
+        self.raw_input = False
+        if os.environ.get("RP0526_OPENVINO_PP") == "1":
+            try:
+                import openvino as ov
+                import openvino.preprocess as ovpp
+                ppp = ovpp.PrePostProcessor(model)
+                ppp.input().tensor().set_element_type(ov.Type.u8) \
+                    .set_layout(ov.Layout("NHWC")) \
+                    .set_shape([1, 640, 640, 3])
+                ppp.input().preprocess().convert_element_type(ov.Type.f16).scale(1.0 / 255.0)
+                ppp.input().model().set_layout(ov.Layout("NCHW"))
+                model = ppp.build()
+                self.raw_input = True
+            except Exception as exc:
+                self.raw_input = False
+                self.raw_input_error = f"{type(exc).__name__}: {exc}"
+        self.compiled = core.compile_model(model, device, {"PERFORMANCE_HINT": "LATENCY"})
+        self.output = self.compiled.output(0)
+
+    def detect(self, bgr: np.ndarray) -> list[dict[str, Any]]:
+        height, width = bgr.shape[:2]
+        scale = min(640.0 / width, 640.0 / height)
+        resized_width, resized_height = int(width * scale), int(height * scale)
+        canvas = np.full((640, 640, 3), 0, dtype=np.uint8)          # 左上对齐，不居中
+        canvas[:resized_height, :resized_width] = cv2.resize(
+            bgr, (resized_width, resized_height), interpolation=cv2.INTER_LINEAR)
+        if self.session is not None:
+            blob = np.ascontiguousarray(
+                (canvas.astype(np.float32).transpose(2, 0, 1)[None, ...] / 255.0)
+                .astype(self.input_dtype))
+            output = self.session.run([self.output_name], {self.input_name: blob})[0]
+        elif getattr(self, "raw_input", False):
+            output = np.asarray(self.compiled([canvas[None]])[self.output])
+        else:
+            # 没走预处理管线（旧 IR/ONNX）：Python 侧做 /255 + NCHW + fp16
+            blob = (canvas.astype(np.float32).transpose(2, 0, 1)[None, ...]
+                    / 255.0).astype(np.float16)
+            output = np.asarray(self.compiled([blob])[self.output])
+        output = np.asarray(output).reshape(-1, 22)
+
+        # 向量化解码：25200 行逐行算 sigmoid 是纯 Python，实测 40 ms（比推理还慢 4 倍）。
+        # 先整表算 conf 再按门限筛，通常只剩个位数行，Python 循环就不值一提了。
+        rows = np.asarray(output, dtype=np.float32)
+        confidence = 1.0 / (1.0 + np.exp(-rows[:, 8]))
+        keep = confidence >= self.confidence
+        rows = rows[keep]
+        confidence = confidence[keep]
+        if rows.shape[0] == 0:
+            return []
+        # 存储顺序 TL/BL/BR/TR → solve_pnp 需要 TL/TR/BR/BL
+        corners = rows[:, :8].reshape(-1, 4, 2)[:, [0, 3, 2, 1], :] / scale
+        xs = corners[:, :, 0]
+        ys = corners[:, :, 1]
+        widths = xs.max(axis=1) - xs.min(axis=1)
+        heights = ys.max(axis=1) - ys.min(axis=1)
+        valid = (widths > 1.0) & (heights > 1.0)
+        corners, width_arr, height_arr = corners[valid], widths[valid], heights[valid]
+        confidence = confidence[valid]
+        rows = rows[valid]
+        if rows.shape[0] == 0:
+            return []
+        class_ids = rows[:, 13:22].argmax(axis=1)
+        color_ids = rows[:, 9:13].argmax(axis=1)
+        detections: list[dict[str, Any]] = []
+        for index in range(rows.shape[0]):
+            points = corners[index]
+            x_min, y_min = points[:, 0].min(), points[:, 1].min()
+            x_max, y_max = points[:, 0].max(), points[:, 1].max()
+            class_id = int(class_ids[index])
+            detections.append({
+                "confidence": float(confidence[index]),
+                "class_id": class_id,
+                "color_id": int(color_ids[index]),
+                "large": class_id in self.LARGE_CLASSES,
+                "box": (float(x_min), float(y_min), float(x_max), float(y_max)),
+                "points": np.asarray(points, dtype=np.float64),
+            })
+        return non_max_suppress(detections)
+
+
+def non_max_suppress(detections: list[dict[str, Any]], iou_threshold: float = 0.45):
+    """rp0526 是 anchor 型输出，同一块板会有多行；按置信度做一次 NMS。"""
+    kept: list[dict[str, Any]] = []
+    for detection in sorted(detections, key=lambda d: -d["confidence"]):
+        box = detection["box"]
+        if any(_iou(box, other["box"]) > iou_threshold for other in kept):
+            continue
+        kept.append(detection)
+    return kept
+
+
+def _iou(first, second) -> float:
+    ax1, ay1, ax2, ay2 = first
+    bx1, by1, bx2, by2 = second
+    inter = max(0.0, min(ax2, bx2) - max(ax1, bx1)) * max(0.0, min(ay2, by2) - max(ay1, by1))
+    if inter <= 0.0:
+        return 0.0
+    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
+    return inter / max(area_a + area_b - inter, 1e-9)
 
 
 def solve_pnp(detection: dict[str, Any], bundle: FrameBundle) -> PnpResult | None:
@@ -347,8 +518,9 @@ def solve_pnp(detection: dict[str, Any], bundle: FrameBundle) -> PnpResult | Non
 class AlphaBetaTracker:
     """Small fallback tracker; deploy_dev's full EKF remains in its C++ target."""
 
-    def __init__(self, max_dt: float, min_hits: int):
+    def __init__(self, max_dt: float, min_hits: int, alpha: float = 0.70, beta: float = 0.12):
         self.max_dt, self.min_hits = max_dt, min_hits
+        self.alpha, self.beta = alpha, beta
         self.position: np.ndarray | None = None
         self.velocity = np.zeros(3, dtype=np.float64)
         self.timestamp_s = 0.0
@@ -370,8 +542,8 @@ class AlphaBetaTracker:
             return
         predicted = self.position + self.velocity * dt
         residual = result.world_position - predicted
-        self.position = predicted + 0.70 * residual
-        self.velocity += (0.12 / dt) * residual
+        self.position = predicted + self.alpha * residual
+        self.velocity += (self.beta / dt) * residual
         self.timestamp_s = timestamp_s
         self.hits += 1
 
