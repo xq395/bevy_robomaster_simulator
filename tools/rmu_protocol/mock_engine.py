@@ -20,12 +20,14 @@ import socket
 import threading
 import time
 import urllib.request
+from fractions import Fraction
 
 import av
 from PIL import Image, ImageDraw
 
 from . import rm_custom_client_pb2 as pb
 from .mini_broker import MiniBroker
+from . import custom_video
 from .video import hevc_encoder, packetize
 
 # 己方 1,2,3,4,7 / 对方 1,2,3,4,7 —— GlobalUnitStatus.robot_health 的顺序
@@ -55,6 +57,7 @@ class GameModel:
         self.air_support = 0
         self.pending_respawn = False
         self.respawn_progress = 0
+        self.dead_since: dict[tuple[str, int], float] = {}
         self.perf_shooter, self.perf_chassis = 1, 1
         self.events: list[tuple[str, bytes]] = []
         self.last_keyboard: pb.KeyboardMouseControl | None = None
@@ -152,6 +155,13 @@ class GameModel:
                         self.pending_respawn = True
                         killer = (101 if not self.blue else 1)
                         self.events.append(("Event", pb.Event(event_id=1, param=f"{self.robot_id},{killer}").SerializeToString()))
+            # 其它单位阵亡 10 s 后回满，避免长时间运行后血条全部为 0
+            now = time.monotonic()
+            for unit, hp in self.health.items():
+                if hp > 0 or unit == key:
+                    self.dead_since.pop(unit, None)
+                elif now - self.dead_since.setdefault(unit, now) >= 10:
+                    self.health[unit] = MAX_HP[unit[1]]
             if random.random() < dt * 0.2:
                 self.economy += 10
                 self.total_economy += 10
@@ -231,28 +241,35 @@ class GameModel:
                         position=(round(self.x, 2), round(self.y, 2), round(self.yaw, 1)))
 
 
-class VideoSender:
-    """把源画面编码成 HEVC 并按 3334 格式发出。源不可用时发测试图。"""
+class FrameSource:
+    """采集线程：持续取源画面，只保留最新一帧（av.VideoFrame）。两路图传各取所需，互不阻塞。
 
-    def __init__(self, target: tuple[str, int], width: int, height: int, fps: int, kbps: int,
-                 source: str | None, model: GameModel):
-        self.target, self.width, self.height, self.fps, self.kbps = target, width, height, fps, kbps
+    子类重写 grab() 换数据源；默认是 JPEG 快照 URL，取不到就画测试图。
+    """
+
+    def __init__(self, width: int, height: int, fps: int, source: str | None, model: GameModel):
+        self.width, self.height, self.fps = width, height, fps
         self.source, self.model = source, model
-        self.sent_frames = 0
-        self.sent_packets = 0
         self.source_ok = False
-        self.error = ""
+        self.lock = threading.Lock()
+        self.frame: av.VideoFrame | None = None
+        self.index = 0
+        self.grab_ms = 0.0
+        self.event = threading.Event()
         self._stop = threading.Event()
 
-    def _grab(self, index: int) -> Image.Image:
+    def grab(self, index: int) -> av.VideoFrame:
         if self.source:
             try:
                 with urllib.request.urlopen(self.source, timeout=0.3) as r:
                     image = Image.open(io.BytesIO(r.read())).convert("RGB")
                 self.source_ok = True
-                return image.resize((self.width, self.height))
+                return av.VideoFrame.from_image(image.resize((self.width, self.height)))
             except (OSError, ValueError):
                 self.source_ok = False
+        return av.VideoFrame.from_image(self.test_pattern(index))
+
+    def test_pattern(self, index: int) -> Image.Image:
         image = Image.new("RGB", (self.width, self.height), "#10202c")
         draw = ImageDraw.Draw(image)
         span = self.width - 160
@@ -265,26 +282,100 @@ class VideoSender:
         return image
 
     def run(self):
-        try:
-            self._run()
-        except Exception as exc:  # noqa: BLE001 - 线程内异常要可见
-            self.error = f"{type(exc).__name__}: {exc}"
-            print(f"Mock 图传线程退出：{self.error}", flush=True)
-
-    def _run(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            self._stream(sock)
-
-    def _stream(self, sock: socket.socket):
-        codec = hevc_encoder(self.width, self.height, self.fps, self.kbps)
-        frame_id = 0
         interval = 1.0 / self.fps
         next_at = time.monotonic()
-        index = 0
         while not self._stop.is_set():
-            frame = av.VideoFrame.from_image(self._grab(index))
-            frame.pts = index
-            index += 1
+            started = time.monotonic()
+            try:
+                frame = self.grab(self.index)
+            except Exception as exc:  # noqa: BLE001 - 单帧失败不该让采集线程退出
+                print(f"图传采集失败：{type(exc).__name__}: {exc}", flush=True)
+                frame = av.VideoFrame.from_image(self.test_pattern(self.index))
+            self.grab_ms = 0.8 * self.grab_ms + 0.2 * (time.monotonic() - started) * 1000
+            with self.lock:
+                self.frame = frame
+                self.index += 1
+            self.event.set()
+            next_at += interval
+            delay = next_at - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            else:
+                next_at = time.monotonic()
+
+    def latest(self, after: int, timeout: float = 0.5):
+        """等到比 after 新的一帧；返回 (index, frame) 或 (after, None)。"""
+        deadline = time.monotonic() + timeout
+        while not self._stop.is_set():
+            with self.lock:
+                if self.frame is not None and self.index > after:
+                    return self.index, self.frame
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return after, None
+            self.event.wait(min(remaining, 0.05))
+            self.event.clear()
+        return after, None
+
+    def stop(self):
+        self._stop.set()
+
+
+def make_hevc_encoder(width: int, height: int, fps: int, kbps: int):
+    """有 NVIDIA GPU 用 hevc_nvenc（RTX 4060 上 1280×720 约 5 ms/帧且无 CPU 尖峰），否则退回 libx265。"""
+    try:
+        codec = av.CodecContext.create("hevc_nvenc", "w")
+        codec.width, codec.height, codec.pix_fmt = width, height, "yuv420p"
+        codec.time_base = Fraction(1, fps)
+        codec.framerate = Fraction(fps, 1)
+        codec.bit_rate = kbps * 1000
+        codec.options = {"preset": "p1", "tune": "ull", "zerolatency": "1", "rc": "cbr",
+                         "g": str(fps), "bf": "0", "forced-idr": "1"}
+        codec.open()
+        return codec, "hevc_nvenc"
+    except (av.error.FFmpegError, ValueError, OSError):
+        return hevc_encoder(width, height, fps, kbps), "libx265"
+
+
+class VideoSender:
+    """官方图传（UDP 3334）：取最新帧 → HEVC → 按 3334 格式分片发出。"""
+
+    def __init__(self, target: tuple[str, int], frames: FrameSource, kbps: int):
+        self.target, self.frames, self.kbps = target, frames, kbps
+        self.sent_frames = 0
+        self.sent_packets = 0
+        self.encoder_name = ""
+        self.encode_ms = 0.0
+        self.error = ""
+        self._stop = threading.Event()
+
+    @property
+    def source_ok(self):
+        return self.frames.source_ok
+
+    def run(self):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                self._stream(sock)
+        except Exception as exc:  # noqa: BLE001 - 线程内异常要可见
+            self.error = f"{type(exc).__name__}: {exc}"
+            print(f"图传线程退出：{self.error}", flush=True)
+
+    def _stream(self, sock: socket.socket):
+        f = self.frames
+        codec, self.encoder_name = make_hevc_encoder(f.width, f.height, f.fps, self.kbps)
+        frame_id = 0
+        seen = 0
+        pts = 0
+        while not self._stop.is_set():
+            seen, frame = f.latest(seen)
+            if frame is None:
+                continue
+            started = time.monotonic()
+            if frame.width != f.width or frame.height != f.height or frame.format.name != "yuv420p":
+                frame = frame.reformat(width=f.width, height=f.height, format="yuv420p")
+            frame.pts = pts
+            pts += 1
             for packet in codec.encode(frame):
                 for chunk in packetize(frame_id, bytes(packet)):
                     try:
@@ -294,6 +385,30 @@ class VideoSender:
                         pass
                 frame_id = (frame_id + 1) % 65536
                 self.sent_frames += 1
+            self.encode_ms = 0.8 * self.encode_ms + 0.2 * (time.monotonic() - started) * 1000
+
+    def stop(self):
+        self._stop.set()
+
+
+class CustomVideoSender:
+    """自定义数据流（0x0310 → MQTT CustomByteBlock）：低码率 H.264，300 B × 50 Hz 节拍。"""
+
+    def __init__(self, publish, frames: FrameSource, width=384, height=288, fps=15, kbps=96):
+        self.frames = frames
+        self.fps = fps
+        self.sender = custom_video.Sender(publish, width, height, fps, kbps)
+        self._stop = threading.Event()
+
+    def run(self):
+        self.sender.start()
+        seen = 0
+        interval = 1.0 / self.fps
+        next_at = time.monotonic()
+        while not self._stop.is_set():
+            seen, frame = self.frames.latest(seen)
+            if frame is not None:
+                self.sender.push_frame(frame)
             next_at += interval
             delay = next_at - time.monotonic()
             if delay > 0:
@@ -303,16 +418,27 @@ class VideoSender:
 
     def stop(self):
         self._stop.set()
+        self.sender.stop()
 
 
 class MockEngine:
     def __init__(self, robot_id: int = 3, mqtt_host: str = "127.0.0.1", mqtt_port: int = 3333,
                  video_to: tuple[str, int] | None = ("127.0.0.1", 3334), video_source: str | None = None,
-                 width: int = 1280, height: int = 720, fps: int = 30, kbps: int = 4000):
+                 width: int = 1280, height: int = 720, fps: int = 30, kbps: int = 4000,
+                 custom_video_size: tuple[int, int] | None = (384, 288), custom_video_fps: int = 15,
+                 custom_video_kbps: int = 96):
         self.model = GameModel(robot_id)
         self.broker = MiniBroker(mqtt_host, mqtt_port, on_message=self._on_message)
-        self.video = VideoSender(video_to, width, height, fps, kbps, video_source, self.model) if video_to else None
+        self._setup_video(FrameSource(width, height, fps, video_source, self.model), video_to, kbps,
+                          custom_video_size, custom_video_fps, custom_video_kbps)
         self._stop = threading.Event()
+
+    def _setup_video(self, frames, video_to, kbps, custom_size, custom_fps, custom_kbps):
+        self.frames = frames
+        self.video = VideoSender(video_to, frames, kbps) if video_to else None
+        publish = lambda block: self._publish("CustomByteBlock", pb.CustomByteBlock(data=block))  # noqa: E731
+        self.custom_video = (CustomVideoSender(publish, frames, custom_size[0], custom_size[1], custom_fps,
+                                               custom_kbps) if custom_size else None)
 
     def _on_message(self, client_id: str, topic: str, payload: bytes):
         try:
@@ -336,7 +462,8 @@ class MockEngine:
             if tick % 10 == 0:
                 for topic, msg in self.model.one_hz():  # 1Hz
                     self._publish(topic, msg)
-                self._publish("CustomByteBlock", pb.CustomByteBlock(data=b"mock:" + str(tick).encode()))
+                if not self.custom_video:
+                    self._publish("CustomByteBlock", pb.CustomByteBlock(data=b"mock:" + str(tick).encode()))
             for topic, data in self.model.drain_events():
                 self._publish(topic, data)
             time.sleep(max(0.0, start + tick * 0.1 - time.monotonic()))
@@ -344,15 +471,36 @@ class MockEngine:
     def start(self):
         self.broker.start()
         threading.Thread(target=self._loop, name="mock-loop", daemon=True).start()
+        if self.video or self.custom_video:
+            threading.Thread(target=self.frames.run, name="video-source", daemon=True).start()
         if self.video:
-            threading.Thread(target=self.video.run, name="mock-video", daemon=True).start()
+            threading.Thread(target=self.video.run, name="video-3334", daemon=True).start()
+        if self.custom_video:
+            threading.Thread(target=self.custom_video.run, name="video-0x0310", daemon=True).start()
         return self
 
     def stop(self):
         self._stop.set()
-        if self.video:
-            self.video.stop()
+        self.frames.stop()
+        for sender in (self.video, self.custom_video):
+            if sender:
+                sender.stop()
         self.broker.stop()
+
+
+def add_custom_video_args(parser):
+    parser.add_argument("--custom-video", default="384x288",
+                        help="0x0310 自定义数据流画面尺寸；填 none 关闭（改发 1 Hz 文本块）")
+    parser.add_argument("--custom-fps", type=int, default=15)
+    parser.add_argument("--custom-kbps", type=int, default=96,
+                        help="300 B × 50 Hz 的上限是 120 kbit/s，块头另占开销，超过 110 会排队跳帧")
+
+
+def custom_video_args(args):
+    size = None
+    if args.custom_video.lower() != "none":
+        size = tuple(int(v) for v in args.custom_video.lower().split("x"))
+    return size, args.custom_fps, args.custom_kbps
 
 
 def main():
@@ -365,6 +513,7 @@ def main():
     parser.add_argument("--size", default="1280x720")
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--kbps", type=int, default=4000)
+    add_custom_video_args(parser)
     args = parser.parse_args()
     video_to = None
     if args.video_to.lower() != "none":
@@ -372,7 +521,7 @@ def main():
         video_to = (host, int(port))
     width, height = (int(v) for v in args.size.lower().split("x"))
     engine = MockEngine(args.robot_id, args.mqtt_host, args.mqtt_port, video_to, args.video_source,
-                        width, height, args.fps, args.kbps).start()
+                        width, height, args.fps, args.kbps, *custom_video_args(args)).start()
     print(f"RMU Mock 引擎：MQTT {args.mqtt_host}:{engine.broker.port}  图传 → {video_to}  机器人 {args.robot_id}", flush=True)
     try:
         while True:
@@ -381,7 +530,8 @@ def main():
             v = engine.video
             print(f"clients={engine.broker.clients()} kb={s['keyboard_msgs']} cc={s['custom_control_msgs']} "
                   f"click={s['map_clicks']} eco={s['economy']} ammo={s['ammo']}"
-                  + (f" video_frames={v.sent_frames} src={'快照' if v.source_ok else '测试图'}" if v else ""), flush=True)
+                  + (f" video_frames={v.sent_frames} enc={v.encoder_name} src={'快照' if v.source_ok else '测试图'}" if v else "")
+                  + (f" custom={engine.custom_video.sender.summary()}" if engine.custom_video else ""), flush=True)
     except KeyboardInterrupt:
         engine.stop()
 

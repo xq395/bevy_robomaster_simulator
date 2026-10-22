@@ -6,10 +6,39 @@ header .actions{display:flex;align-items:center;gap:16px}header button{width:aut
 .help-drawer[hidden]{display:none}.help-drawer{position:fixed;right:0;top:0;bottom:0;width:360px;overflow:auto;padding:20px;background:#121e30;border-left:1px solid #4a6384;line-height:1.7;z-index:2}.help-drawer h3{font-size:16px}.help-drawer .close{width:auto;float:right}.help-visible{padding-right:360px}.help-visible main{grid-template-columns:minmax(0,1fr)}.row{flex-wrap:wrap}#drivePad{padding:12px;border:2px solid #4a6384;border-radius:8px;margin:10px 0;cursor:pointer}#drivePad:focus{outline:2px solid #5cdbc5;background:#17463f}@media(max-width:760px){.help-visible{padding-right:0}.help-drawer{position:static;width:auto;max-height:45vh;border-bottom:1px solid #4a6384}.help-visible main{grid-template-columns:1fr}}
 </style>
 <style>
-.rmu[hidden]{display:none}.rmu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:8px 0}.rmu-card{background:#0d1726;border:1px solid #293c58;border-radius:8px;padding:8px 10px}.rmu-card span{display:block;font-size:12px;color:#93a7c4}.rmu-card b{font-size:18px}.hp{display:grid;grid-template-columns:52px 1fr 44px;gap:6px;align-items:center;font-size:13px;margin:3px 0}.hp i{display:block;height:10px;border-radius:5px;background:#1c2b40;overflow:hidden}.hp i u{display:block;height:100%;background:#35c28d;text-decoration:none}.hp.enemy i u{background:#e25b6a}.bad{color:#ff8b8b}.ok{color:#6ddcb0}#rmuEvents{max-height:160px;overflow:auto;font:12px monospace;margin:0;padding-left:18px}.cmds{display:grid;grid-template-columns:1fr 1fr;gap:6px}.cmds button{padding:9px;margin:0;font-size:14px}#rmuPad{padding:12px;border:2px solid #4a6384;border-radius:8px;margin:10px 0;cursor:crosshair;text-align:center}#rmuPad.on{border-color:#5cdbc5;background:#17463f}#video.clickable{cursor:crosshair}
+.rmu[hidden]{display:none}.rmu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:8px 0}.rmu-card{background:#0d1726;border:1px solid #293c58;border-radius:8px;padding:8px 10px}.rmu-card span{display:block;font-size:12px;color:#93a7c4}.rmu-card b{font-size:18px}.hp{display:grid;grid-template-columns:52px 1fr 44px;gap:6px;align-items:center;font-size:13px;margin:3px 0}.hp i{display:block;height:10px;border-radius:5px;background:#1c2b40;overflow:hidden}.hp i u{display:block;height:100%;background:#35c28d;text-decoration:none}.hp.enemy i u{background:#e25b6a}.bad{color:#ff8b8b}.ok{color:#6ddcb0}#rmuEvents{max-height:160px;overflow:auto;font:12px monospace;margin:0;padding-left:18px}.cmds{display:grid;grid-template-columns:1fr 1fr;gap:6px}.cmds button{padding:9px;margin:0;font-size:14px}#video.clickable{cursor:crosshair}
 body.cockpit main{grid-template-columns:minmax(0,1fr) 310px;padding:10px;gap:10px}body.cockpit #video{height:calc(100vh - 245px);max-height:none;min-height:200px}body.cockpit main>section>.panel:nth-child(2){display:none}body.cockpit .video-settings{display:none}body.cockpit.help-visible main{grid-template-columns:minmax(0,1fr)}body.cockpit.help-visible #video{height:45vh}#fullscreenStatus{font-size:13px;color:#a5b8d1}@media(max-width:850px){body.cockpit main{grid-template-columns:1fr}body.cockpit #video{height:45vh}}
 </style>
-<header><div><h1>NHS Server</h1><small>操作手终端 · Daedalus 模拟器接入</small></div><div class="actions"><span id="connection">连接中</span><button id="helpOpen" aria-expanded="false" aria-controls="helpDrawer">操作说明</button></div></header>
+<style>
+/* ===== RMU 官方协议模式：画面为主，HUD 叠加，模拟器控件隐藏 ===== */
+body:not(.rmu-mode) .rmu-only,body:not(.rmu-mode) .hud,body:not(.rmu-mode) #rmuPad,body:not(.rmu-mode) #rmuControl{display:none!important}
+body.rmu-mode .rmu-only{display:inline}body.rmu-mode .sim-only{display:none!important}
+body.rmu-mode header{padding:10px 20px}body.rmu-mode main{grid-template-columns:minmax(0,1fr) 340px;padding:10px;gap:10px}
+body.rmu-mode #videoPanel{padding:8px}body.rmu-mode .source{font-size:13px;color:#93a7c4}body.rmu-mode .source select{font-size:13px}
+body.rmu-mode #video{height:calc(100vh - 172px);min-height:360px;max-height:none;display:block}body.rmu-mode.cockpit #video{height:calc(100vh - 110px)}
+body.rmu-mode aside.panel{max-height:calc(100vh - 102px);overflow:auto;padding:14px}body.rmu-mode #videoState{margin:6px 0 0;font-size:12px}
+body.rmu-mode.custom-video #video{image-rendering:auto}
+#rmuControl h3{font-size:14px;margin:16px 0 6px}#rmuControl h3 small{font-weight:normal}#rmuMap{width:100%;background:#091321;border-radius:8px;cursor:crosshair;display:block}
+.row.compact{margin:6px 0;font-size:13px}#rmuControl details{margin:8px 0}#rmuControl summary{cursor:pointer;color:#a5b8d1;font-size:14px;padding:4px 0}
+#rmuEvents li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#rmuCmdResult:empty{display:none}
+#rmuConn.ok{color:#6ddcb0}#rmuConn.bad{color:#ff8b8b}
+.stage{position:relative}
+.hud{position:absolute;inset:0;pointer-events:none;font-size:13px;text-shadow:0 1px 2px #000}
+.hud-box{background:#0b1220cc;border:1px solid #293c58;border-radius:8px;padding:4px 12px;text-align:center;white-space:nowrap}
+.hud-box span{display:block;font-size:11px;color:#a5b8d1}.hud-box b{font-size:16px}.hud-box.ally{border-color:#35c28d99}.hud-box.enemy{border-color:#e25b6a99}.hud-box.clock b{font-size:22px}
+.hud-top,.hud-bottom{position:absolute;left:50%;transform:translateX(-50%);display:flex;gap:8px}.hud-top{top:8px}.hud-bottom{bottom:8px}.hud-box.wide{min-width:150px}
+.bar{display:block;height:6px;background:#1c2b40;border-radius:3px;overflow:hidden;margin-top:3px}.bar u{display:block;height:100%;width:0;background:#35c28d;text-decoration:none}#rmuHeatBar{background:#ffb454}.hot #rmuHeatBar{background:#ff5b5b}.hot b{color:#ff8b8b}
+.hud-side{position:absolute;top:72px;width:196px;background:#0b1220b3;border-radius:8px;padding:6px 8px}.hud-side.left{left:8px}.hud-side.right{right:8px}.hud-side h3{margin:0 0 4px;font-size:12px;color:#a5b8d1}
+.hud .hp{grid-template-columns:46px 1fr 36px;margin:2px 0}.hud .hp.dead{opacity:.45}.hud .hp b{text-align:right}
+.hud-banner{position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);background:#8d3545e6;padding:10px 18px;border-radius:10px;font-size:16px;margin:0}.hud-banner:empty{display:none}
+#rmuPad{position:absolute;inset:0;margin:0;border:3px solid transparent;border-radius:6px;display:flex;align-items:flex-end;justify-content:center;padding:0 0 72px;pointer-events:none;outline:none}#rmuPad[hidden]{display:none}
+#rmuPadText{display:none;background:#0b1220e0;padding:6px 14px;border-radius:8px;font-size:14px}
+#rmuPad.armed{pointer-events:auto;cursor:crosshair;border-color:#ffd166;background:#0b122055}#rmuPad.armed #rmuPadText{display:block;color:#ffd166}
+#rmuPad.on{pointer-events:auto;cursor:none;border-color:#5cdbc5;background:none}#rmuPad.on #rmuPadText{display:block;color:#5cdbc5;font-size:12px;padding:3px 10px}
+@media(max-width:1100px){.hud-side{width:160px}.hud .hp{grid-template-columns:38px 1fr 30px;font-size:11px}}
+@media(max-width:850px){body.rmu-mode main{grid-template-columns:1fr}body.rmu-mode #video{height:55vh;min-height:240px}body.rmu-mode aside.panel{max-height:none}}
+</style>
+<header><div><h1>NHS Server</h1><small class="sim-only">操作手终端 · Daedalus 模拟器接入</small><small class="rmu-only">操作手终端 · RMU 官方协议</small></div><div class="actions"><span id="rmuConn" class="rmu-only">裁判系统 · 未连接</span><span id="connection" class="sim-only">连接中</span><button id="helpOpen" aria-expanded="false" aria-controls="helpDrawer">操作说明</button></div></header>
 <aside id="helpDrawer" class="help-drawer" aria-labelledby="helpTitle" hidden>
 <button id="helpClose" class="close">收起</button><h2 id="helpTitle">简要操作说明</h2>
 <p>NHS Server 是操作手网页终端；Daedalus（代达罗斯）是接入的模拟器名称。</p>
@@ -44,6 +73,12 @@ body.cockpit main{grid-template-columns:minmax(0,1fr) 310px;padding:10px;gap:10p
 <p class="hint">手柄产生有效输入后接管本地自瞄来源并清除键盘 F5 的锁定状态：松开 RT 即退出手柄自瞄。再次使用键盘控制则切回键盘来源，需要重新按 F5 开启。网页接管时以网页状态为准。手柄说明采用 Xbox 标识。</p>
 </details>
 </section>
+<section id="rmuHelp"><h3>官方协议模式（RMU 裁判系统）</h3>
+<p>“显示链路”选“官方图传”或“自定义链路 0x0310”即进入此模式，服务端开启 RMU 时自动选中官方图传。画面上方是比赛阶段、倒计时、双方基地/前哨，左右是双方 5 台机器人血量（官方 GlobalUnitStatus 下发），底部是本机血量、热量、发弹量、经济。</p>
+<p><strong>自定义链路 0x0310</strong> 是机器人经图传链路发来的 300 字节 × 50 Hz 数据块（约 120 kbit/s，无重传），这里用来传低码率画面：分辨率低、偶有花屏属正常，用于官方图传不可用或需要机器人端自选画面时。</p>
+<p>点右侧“接管键鼠”后画面出现黄框，点击画面锁定鼠标，边框变青色即“正在控制”：WASD、Shift、Ctrl、Q E R F G Z X C V B、鼠标移动/左右中键/滚轮按手册位掩码以 75Hz 发送。<kbd>Esc</kbd> 释放鼠标并清零输入，再按一次 <kbd>Esc</kbd> 撤销接管。比赛时键鼠来源只能在官方选手端和自定义客户端之间二选一。</p>
+<p>右侧小地图点击发送地图标记；常用指令直接点按钮，其余收在折叠栏里。码率、丢块、键鼠帧数等调试数据在最下方“诊断”。</p>
+</section>
 <h3 id="webHelp">网页操作与图传 · 1. 开始操作</h3>
 <p><strong>全屏驾驶：</strong>点击顶部“全屏驾驶”，将放大画面并收起图传调参和小地图。右上角“操作说明”仍可随时展开，主画面会为抽屉让出空间。全屏不会自动接管机器人；选择全手动并接管后键盘锁定。退出全屏会撤销网页控制，重新进入需要再次接管。</p>
 <p class="hint">全屏只简化显示，不提高源画面帧率。当前源约5Hz；H.264丢包还可能等待关键帧恢复。车辆移动跟随云台朝向，松键后的减速受模拟器物理影响。</p>
@@ -64,40 +99,42 @@ body.cockpit main{grid-template-columns:minmax(0,1fr) 310px;padding:10px;gap:10p
 <p>画面离线时检查 Web 桥接；能跟踪却不射击时，检查实际授权、桥接启动参数 <code>-Send -AllowFire</code> 和算法调试页中的 FireGate。不要同时启动多个图像桥。</p>
 <p class="hint">说明为非模态抽屉，可保持展开并用方向键操作；打开说明会清空当前按键，避免残留输入。</p>
 </aside>
-<main><section><div class="panel"><h2>实时画面 <small>桥接相机 · 压缩预览</small></h2>
-<label>显示链路 <select id="videoPath"><option value="jpeg">原 JPEG 预览</option><option value="h264">H.264 窄带解码结果</option><option value="rmu" id="rmuVideoOption" hidden disabled>官方图传 UDP 3334（HEVC）</option></select></label>
-<div class="row"><label>H.264 kbit/s <select id="h264rate"><option>40</option><option selected>80</option></select></label><label>300B 包频率 <select id="packetHz"><option selected>40</option><option>50</option></select></label><label>丢包 <select id="loss"><option value="0">0%</option><option value="0.01">1%</option><option value="0.03">3%</option><option value="0.05">5%</option></select></label></div>
-<button id="startNarrow">应用 H.264 测试配置（320×240 / 12FPS / 全视野）</button><p id="narrowStats" class="hint">独立 H.264 → 300B 分包 → 限频/丢包 → 解码；以下 JPEG 控件仅影响原预览。</p>
-<div class="row"><label>宽度 <select id="width"><option>320</option><option selected>640</option><option>960</option><option>1280</option></select></label><label>JPEG质量 <input id="quality" type="range" min="5" max="90" value="55"></label><label>FPS <select id="fps"><option>2</option><option selected>5</option><option>10</option></select></label><label>载荷预算 <select id="budget"><option value="0">不限</option><option value="120">120 kbit/s</option><option value="256">256 kbit/s</option><option value="512">512 kbit/s</option></select></label></div>
-<img id="video" alt="等待 Web 桥接画面"><p id="videoState" class="hint">画面来自现有桥接快照，不额外消费 Talos 图像。</p></div>
-<div class="panel rmu" id="rmuPanel" style="margin-top:18px" hidden><h2>裁判系统 <small id="rmuLinkState">RMU 协议 · 未连接</small></h2>
-<div class="rmu-grid">
-<div class="rmu-card"><span>比赛阶段</span><b id="rmuStage">—</b></div>
-<div class="rmu-card"><span>阶段剩余</span><b id="rmuCountdown">—</b></div>
-<div class="rmu-card"><span>本机血量</span><b id="rmuHp">—</b></div>
-<div class="rmu-card"><span>热量</span><b id="rmuHeat">—</b></div>
-<div class="rmu-card"><span>允许发弹量</span><b id="rmuAmmo">—</b></div>
-<div class="rmu-card"><span>己方经济</span><b id="rmuEco">—</b></div>
-<div class="rmu-card"><span>基地 / 前哨（己）</span><b id="rmuBase">—</b></div>
-<div class="rmu-card"><span>基地 / 前哨（敌）</span><b id="rmuEnemyBase">—</b></div>
+<main><section><div class="panel" id="videoPanel"><h2 class="sim-only">实时画面 <small>桥接相机 · 压缩预览</small></h2>
+<label class="source">显示链路 <select id="videoPath"><option value="jpeg">原 JPEG 预览</option><option value="h264">H.264 窄带解码结果</option><option value="rmu" id="rmuVideoOption" hidden disabled>官方图传 UDP 3334（HEVC）</option><option value="custom" id="rmuCustomOption" hidden disabled>自定义链路 0x0310（300B×50Hz）</option></select></label>
+<div class="row sim-only"><label>H.264 kbit/s <select id="h264rate"><option>40</option><option selected>80</option></select></label><label>300B 包频率 <select id="packetHz"><option selected>40</option><option>50</option></select></label><label>丢包 <select id="loss"><option value="0">0%</option><option value="0.01">1%</option><option value="0.03">3%</option><option value="0.05">5%</option></select></label></div>
+<button id="startNarrow" class="sim-only">应用 H.264 测试配置（320×240 / 12FPS / 全视野）</button><p id="narrowStats" class="hint sim-only">独立 H.264 → 300B 分包 → 限频/丢包 → 解码；以下 JPEG 控件仅影响原预览。</p>
+<div class="row sim-only"><label>宽度 <select id="width"><option>320</option><option selected>640</option><option>960</option><option>1280</option></select></label><label>JPEG质量 <input id="quality" type="range" min="5" max="90" value="55"></label><label>FPS <select id="fps"><option>2</option><option selected>5</option><option>10</option></select></label><label>载荷预算 <select id="budget"><option value="0">不限</option><option value="120">120 kbit/s</option><option value="256">256 kbit/s</option><option value="512">512 kbit/s</option></select></label></div>
+<div class="stage" id="stage"><img id="video" alt="等待画面">
+<div class="rmu hud" id="rmuPanel" hidden aria-live="off">
+ <div class="hud-top">
+  <div class="hud-box ally"><span>己方 基地 / 前哨</span><b id="rmuBase">—</b></div>
+  <div class="hud-box clock"><span id="rmuStage">—</span><b id="rmuCountdown">—</b></div>
+  <div class="hud-box enemy"><span>对方 基地 / 前哨</span><b id="rmuEnemyBase">—</b></div>
+ </div>
+ <div class="hud-side left"><h3>己方</h3><div id="rmuAlly"></div></div>
+ <div class="hud-side right"><h3>对方</h3><div id="rmuEnemy"></div></div>
+ <p class="hud-banner" id="rmuRespawn" role="status"></p>
+ <div class="hud-bottom">
+  <div class="hud-box wide"><span>本机血量</span><b id="rmuHp">—</b><i class="bar"><u id="rmuHpBar"></u></i></div>
+  <div class="hud-box wide"><span>热量</span><b id="rmuHeat">—</b><i class="bar"><u id="rmuHeatBar"></u></i></div>
+  <div class="hud-box"><span>允许发弹量</span><b id="rmuAmmo">—</b></div>
+  <div class="hud-box"><span>己方经济</span><b id="rmuEco">—</b></div>
+ </div>
 </div>
-<div class="row" style="align-items:flex-start"><div style="flex:1;min-width:220px"><h3 style="font-size:14px;margin:6px 0">己方</h3><div id="rmuAlly"></div></div><div style="flex:1;min-width:220px"><h3 style="font-size:14px;margin:6px 0">对方</h3><div id="rmuEnemy"></div></div></div>
-<p class="hint" id="rmuRespawn"></p>
-<canvas id="rmuMap" width="560" height="300" style="width:100%;background:#091321;border-radius:8px;cursor:crosshair" aria-label="场地图：点击发送地图标记"></canvas>
-<p class="hint">场地图按 28m×15m 绘制，原点在红方补给站一侧的围挡角，X 轴指向蓝方（手册 V2.0.0 坐标定义）。青色点是本机 RobotPosition，紫色点是雷达信息。场地尺寸以当届规则手册为准。</p>
-<h3 style="font-size:14px;margin:6px 0">事件 / 判罚 / 回执</h3><ol id="rmuEvents" reversed></ol>
-<p class="hint" id="rmuStats">—</p></div>
-<div class="panel" style="margin-top:18px"><h2>自车小地图 <small>模拟器真值 · 自车中心 ±10m</small></h2><canvas id="map" width="720" height="320"></canvas><div class="hint">青色：底盘方向　黄色：云台方向。网格 2m；当前为坐标网格，尚未接入场地底图及敌方观测。</div></div></section>
-<aside class="panel"><h2>控制与执行</h2><label>控制方式 <select id="mode"><option value="manual" selected>全手动接管（操作手）</option><option value="command">指挥模式</option></select></label><p class="hint" id="modeHint">全手动：WASD移动，方向键云台，J射击；自动瞄准/射击及小陀螺关闭。</p><button id="take">接管模式控制</button><button id="aim" disabled>自瞄：关闭</button><button id="spin" disabled>小陀螺：关闭</button><button id="fire" disabled>按住：授权自动射击</button><button class="danger" id="stop">撤销并停止</button>
+<div class="rmu" id="rmuPad" role="button" tabindex="0" aria-describedby="rmuPadHint" hidden><span id="rmuPadText">未接管</span></div>
+</div>
+<p id="videoState" class="hint">画面来自现有桥接快照，不额外消费 Talos 图像。</p></div>
+<div class="panel sim-only" style="margin-top:18px"><h2>自车小地图 <small>模拟器真值 · 自车中心 ±10m</small></h2><canvas id="map" width="720" height="320"></canvas><div class="hint">青色：底盘方向　黄色：云台方向。网格 2m；当前为坐标网格，尚未接入场地底图及敌方观测。</div></div></section>
+<aside class="panel"><div class="sim-only"><h2>控制与执行</h2><label>控制方式 <select id="mode"><option value="manual" selected>全手动接管（操作手）</option><option value="command">指挥模式</option></select></label><p class="hint" id="modeHint">全手动：WASD移动，方向键云台，J射击；自动瞄准/射击及小陀螺关闭。</p><button id="take">接管模式控制</button><button id="aim" disabled>自瞄：关闭</button><button id="spin" disabled>小陀螺：关闭</button><button id="fire" disabled>按住：授权自动射击</button><button class="danger" id="stop">撤销并停止</button>
 <div class="row"><span>实际控制模式</span><b id="actualMode">—</b></div><div class="row"><span>实际自瞄 / 小陀螺</span><b id="actual">—</b></div><div class="row"><span>实际射击授权</span><b id="authorized">—</b></div><div class="row"><span>发射计数</span><b id="shots">—</b></div><div class="row"><span>应用序号</span><b id="seq">—</b></div><div class="row"><span>数据年龄</span><b id="age">—</b></div><p id="result">等待状态</p>
-<p class="hint">指挥模式由模拟器本地驾驶；全手动模式在网页使用 WASD／方向键／J射击。详细步骤见右上角“操作说明”。</p><a href="http://127.0.0.1:5000/" target="_blank" style="color:#6ddccc">打开算法调试页 ↗</a>
-<section class="rmu" id="rmuControl" hidden><h2 style="margin-top:22px">官方协议键鼠 <small>KeyboardMouseControl 75Hz</small></h2>
-<p class="hint">比赛时键鼠来源只能二选一（官方选手端 / 自定义客户端）。接管后点击下方区域锁定鼠标；Esc 释放鼠标并把输入清零，再按一次 Esc 或点“撤销”退出。建议先全屏：浏览器才会让网页拦截 Ctrl+W 等快捷键。</p>
+<p class="hint">指挥模式由模拟器本地驾驶；全手动模式在网页使用 WASD／方向键／J射击。详细步骤见右上角“操作说明”。</p><a href="http://127.0.0.1:5000/" target="_blank" style="color:#6ddccc">打开算法调试页 ↗</a></div>
+<section class="rmu" id="rmuControl" hidden>
 <button id="rmuTake">接管键鼠（官方协议）</button>
-<div id="rmuPad" role="button" tabindex="0" aria-describedby="rmuPadHint">未接管</div>
-<p class="hint" id="rmuPadHint">锁定后：WASD、Shift、Ctrl、Q E R F G Z X C V B，鼠标移动 / 左右中键 / 滚轮，按手册位掩码发送。</p>
-<p class="hint" id="rmuInput">—</p>
-<h2 style="margin-top:18px">指令</h2>
+<p class="hint" id="rmuPadHint">接管后点击画面锁定鼠标。Esc 释放鼠标并清零输入，再按一次 Esc 撤销接管。</p>
+<h3>小地图 <small>点击发送标记</small></h3>
+<canvas id="rmuMap" width="560" height="300" aria-label="场地图：点击发送地图标记"></canvas>
+<div class="row compact"><label>身份 <select id="rmuRole"><option value="gimbal">云台手（≥0.5s）</option><option value="semi_auto">半自动（≥3s）</option></select></label><label>标记 <select id="rmuMark"><option value="1">攻击</option><option value="2">防御</option><option value="3">警戒</option></select></label></div>
+<h3>指令</h3>
 <div class="cmds">
 <button data-cmd='{"topic":"CommonCommand","fields":{"cmd_type":1,"param":50}}'>兑换 50 发 17mm</button>
 <button data-cmd='{"topic":"CommonCommand","fields":{"cmd_type":2,"param":5}}'>兑换 5 发 42mm</button>
@@ -105,11 +142,13 @@ body.cockpit main{grid-template-columns:minmax(0,1fr) 310px;padding:10px;gap:10p
 <button data-cmd='{"topic":"CommonCommand","fields":{"cmd_type":4,"param":0}}'>花费金币立即复活</button>
 <button data-cmd='{"topic":"CommonCommand","fields":{"cmd_type":5,"param":0}}'>远程兑换发弹量</button>
 <button data-cmd='{"topic":"CommonCommand","fields":{"cmd_type":6,"param":0}}'>远程兑换血量</button>
+</div>
+<details><summary>英雄 / 能量机关 / 空中支援</summary><div class="cmds">
 <button data-cmd='{"topic":"HeroDeployModeEventCommand","fields":{"mode":1}}'>进入部署模式</button>
 <button data-cmd='{"topic":"HeroDeployModeEventCommand","fields":{"mode":0}}'>退出部署模式</button>
 <button data-cmd='{"topic":"RuneActivateCommand","fields":{"activate":1}}'>激活能量机关</button>
 <button data-cmd='{"topic":"AirSupportCommand","fields":{"command_id":1}}'>免费空中支援</button>
-</div>
+</div></details>
 <details><summary>哨兵 / 飞镖 / 性能体系</summary><div class="cmds">
 <button data-cmd='{"topic":"SentryCtrlCommand","fields":{"command_id":7}}'>哨兵进攻姿态</button>
 <button data-cmd='{"topic":"SentryCtrlCommand","fields":{"command_id":8}}'>哨兵防御姿态</button>
@@ -122,9 +161,16 @@ body.cockpit main{grid-template-columns:minmax(0,1fr) 310px;padding:10px;gap:10p
 <button data-cmd='{"topic":"RobotPerformanceSelectionCommand","fields":{"shooter":1,"chassis":1}}'>冷却优先 + 血量优先</button>
 <button data-cmd='{"topic":"RobotPerformanceSelectionCommand","fields":{"shooter":2,"chassis":2}}'>爆发优先 + 功率优先</button>
 </div></details>
-<p class="hint">地图标记：在左侧“裁判系统”面板的场地图上点击，发送 MapClickCmd（下方可选身份与标记类型）。</p>
-<div class="row"><label>身份 <select id="rmuRole"><option value="gimbal">云台手（间隔 ≥0.5s）</option><option value="semi_auto">半自动操作手（间隔 ≥3s）</option></select></label><label>标记 <select id="rmuMark"><option value="1">攻击</option><option value="2">防御</option><option value="3">警戒</option></select></label></div>
-<p id="rmuCmdResult" class="hint" role="status">—</p></section></aside></main>
+<p id="rmuCmdResult" class="hint" role="status"></p>
+<h3>事件 / 判罚 / 回执</h3><ol id="rmuEvents" reversed></ol>
+<details id="rmuDiag"><summary>诊断</summary>
+<p class="hint" id="rmuLinkState">RMU 协议 · 未连接</p>
+<p class="hint" id="rmuStats">—</p>
+<p class="hint" id="rmuCustomStats">—</p>
+<p class="hint" id="rmuInput">—</p>
+<p class="hint">场地图按 28m×15m 绘制，原点在红方补给站一侧的围挡角，X 轴指向蓝方（手册 V2.0.0 坐标定义）。青色点是本机 RobotPosition，红/紫色点是雷达信息，黄色叉是最近一次标记。场地尺寸以当届规则手册为准。</p>
+</details>
+</section></aside></main>
 <script>
 const $=id=>document.getElementById(id);let state=null,active=false,busy=false,uiVersion=null;
 const held=new Set();let mode=$('mode').value;
@@ -199,14 +245,14 @@ async function poll(){try{let r=await fetch('/api/state'),d=await r.json();if(d.
 setInterval(()=>{if(!document.hidden)send()},50);poll();
 let objectUrl=null,bytes=0,started=performance.now();
 async function image(){let begin=performance.now(),wait=1000/Number($('fps').value);try{
-  let path=$('videoPath').value,narrow=path==='h264',official=path==='rmu';if(official)wait=1000/30;
-  let r=await fetch(official?'/rmu/frame':narrow?'/narrowband/frame':`/frame?width=${$('width').value}&quality=${$('quality').value}`);if(!r.ok)throw Error();let blob=await r.blob(),budget=(narrow||official)?0:Number($('budget').value);
+  let path=$('videoPath').value,narrow=path==='h264',custom=path==='custom',official=path==='rmu'||custom;if(official)wait=1000/30;
+  let r=await fetch(custom?'/rmu/custom_frame':path==='rmu'?'/rmu/frame':narrow?'/narrowband/frame':`/frame?width=${$('width').value}&quality=${$('quality').value}`);if(!r.ok)throw Error();let blob=await r.blob(),budget=(narrow||official)?0:Number($('budget').value);
  // Serialize requests and pace display by JPEG payload size; no accumulating frame queue.
  if(budget)wait=Math.max(wait,blob.size*8/budget);
  await new Promise(resolve=>setTimeout(resolve,Math.max(0,wait-(performance.now()-begin))));
  if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(blob);$('video').src=objectUrl;bytes+=blob.size;
- $('videoState').textContent=official?(window.rmuVideoText||'官方图传 3334'):narrow?'显示窄带解码结果；浏览器 JPEG 仅用于本地展示，不计入模拟链路。':`${(blob.size/1024).toFixed(1)} KB/帧 · 载荷均速 ${(bytes*8/(performance.now()-started)).toFixed(1)} kbit/s · Q=${$('quality').value} · HTTP载荷节拍模拟，非赛事链路限流；源约5Hz`;
- }catch{let official=$('videoPath').value==='rmu';$('videoState').textContent=official?'3334 暂无画面：检查赛事引擎 / Mock 是否在推流，UDP 3334 是否被占用或被防火墙拦截':'画面离线：请启动 Web 桥接';wait=official?500:1500}setTimeout(image,Math.max(0,wait-(performance.now()-begin)))}
+ $('videoState').textContent=custom?(window.rmuCustomText||'自定义链路 0x0310'):official?(window.rmuVideoText||'官方图传 3334'):narrow?'显示窄带解码结果；浏览器 JPEG 仅用于本地展示，不计入模拟链路。':`${(blob.size/1024).toFixed(1)} KB/帧 · 载荷均速 ${(bytes*8/(performance.now()-started)).toFixed(1)} kbit/s · Q=${$('quality').value} · HTTP载荷节拍模拟，非赛事链路限流；源约5Hz`;
+ }catch{let path=$('videoPath').value,official=path==='rmu'||path==='custom';$('videoState').textContent=path==='custom'?(window.rmuCustomText||'0x0310 暂无画面：机器人端未发送 CustomByteBlock 视频流'):official?'3334 暂无画面：检查赛事引擎 / Mock 是否在推流，UDP 3334 是否被占用或被防火墙拦截':'画面离线：请启动 Web 桥接';wait=official?500:1500}setTimeout(image,Math.max(0,wait-(performance.now()-begin)))}
 for(const id of ['width','quality','fps','budget'])$(id).addEventListener('change',()=>{bytes=0;started=performance.now()});image();
 $('startNarrow').onclick=async()=>{try{let r=await fetch('/api/narrowband',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({width:320,height:240,fps:12,bitrate:Number($('h264rate').value),packet_hz:Number($('packetHz').value),loss:Number($('loss').value)})});if(!r.ok)throw Error();$('videoPath').value='h264'}catch{$('narrowStats').textContent='配置失败'}};
 window.rmuVideoSelected=()=>$('videoPath').value==='rmu';
@@ -239,8 +285,8 @@ async function setDriving(on){
  renderPad();
 }
 function renderPad(){
- const pad=$('rmuPad');pad.classList.toggle('on',driving&&locked);
- pad.textContent=!driving?'未接管':locked?'鼠标已锁定 · Esc 释放':'已接管 · 点击此处锁定鼠标开始操作';
+ const pad=$('rmuPad');pad.classList.toggle('on',driving&&locked);pad.classList.toggle('armed',driving&&!locked);
+ text('rmuPadText',!driving?'未接管':locked?'● 正在控制 · Esc 释放鼠标':'已接管 · 点击画面锁定鼠标开始操作 · Esc 撤销');
  $('rmuTake').textContent=driving?'撤销键鼠接管':'接管键鼠（官方协议）';
  $('rmuTake').classList.toggle('danger',driving);
 }
@@ -323,41 +369,53 @@ function drawMap(){
 
 // ---------- HUD ----------
 function hpRows(el,values,maxes,cls){
- el.innerHTML='';values.forEach((v,i)=>{const max=maxes[i]||Math.max(v,1),row=document.createElement('div');row.className='hp '+cls;
-  row.innerHTML=`<span>${UNITS[i]}</span><i><u style="width:${Math.min(100,v/max*100)}%"></u></i><b>${v}</b>`;el.appendChild(row)})}
+ if(el.children.length!==values.length){el.innerHTML='';values.forEach((_,i)=>{const row=document.createElement('div');row.className='hp '+cls;
+  row.innerHTML=`<span>${UNITS[i]}</span><i><u></u></i><b></b>`;el.appendChild(row)})}
+ values.forEach((v,i)=>{const row=el.children[i],max=maxes[i]||Math.max(v,1);row.classList.toggle('dead',v<=0);
+  row.querySelector('u').style.width=Math.min(100,v/max*100)+'%';row.querySelector('b').textContent=v})}
+function bar(id,v,max){$(id).style.width=(max>0?Math.max(0,Math.min(100,v/max*100)):0)+'%'}
 const DEFAULT_MAX=[350,250,200,200,400];
 let lastEvents='';
 function renderHud(){
  const gs=msg('GameStatus'),gu=msg('GlobalUnitStatus'),dyn=msg('RobotDynamicStatus'),st=msg('RobotStaticStatus'),lg=msg('GlobalLogisticsStatus'),rs=msg('RobotRespawnStatus');
  text('rmuLinkState',rmu.connected?`RMU 协议 · 已连接 ${rmu.host}:${rmu.port} · clientID ${rmu.robot_id}`:`RMU 协议 · ${rmu.error||'未连接'}`);
- $('rmuLinkState').className=rmu.connected?'ok':'bad';
+ $('rmuLinkState').className='hint '+(rmu.connected?'ok':'bad');
+ text('rmuConn',rmu.connected?`裁判系统在线 · ${rmu.robot_id}`:'裁判系统离线');$('rmuConn').className='rmu-only '+(rmu.connected?'ok':'bad');
  if(gs){text('rmuStage',(STAGES[gs.current_stage]??gs.current_stage)+(gs.is_paused?'（暂停）':''));
   const s=gs.stage_countdown_sec;text('rmuCountdown',s==null?'—':`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`)}
  if(dyn){text('rmuHp',st?`${dyn.current_health} / ${st.max_health}`:dyn.current_health);
   text('rmuHeat',st?`${Math.round(dyn.current_heat)} / ${st.max_heat}`:Math.round(dyn.current_heat));
-  $('rmuHeat').className=st&&dyn.current_heat>st.max_heat*0.8?'bad':'';text('rmuAmmo',dyn.remaining_ammo)}
+  $('rmuHeat').parentElement.classList.toggle('hot',!!st&&dyn.current_heat>st.max_heat*0.8);text('rmuAmmo',dyn.remaining_ammo);
+  if(st){bar('rmuHpBar',dyn.current_health,st.max_health);bar('rmuHeatBar',dyn.current_heat,st.max_heat)}}
  if(lg)text('rmuEco',lg.remaining_economy);
  if(gu){text('rmuBase',`${gu.base_health} / ${gu.outpost_health}`);text('rmuEnemyBase',`${gu.enemy_base_health} / ${gu.enemy_outpost_health}`);
   const hp=gu.robot_health||[];hpRows($('rmuAlly'),hp.slice(0,5),DEFAULT_MAX,'ally');hpRows($('rmuEnemy'),hp.slice(5,10),DEFAULT_MAX,'enemy')}
  text('rmuRespawn',rs&&rs.is_pending_respawn?`待复活：读条 ${rs.current_respawn_progress}/${rs.total_respawn_progress}${rs.can_free_respawn?' · 可免费复活':''}${rs.can_pay_for_respawn?` · 可花 ${rs.gold_cost_for_respawn} 金币立即复活`:''}`:'');
  const items=[...(rmu.events||[]).map(e=>`${new Date(e.at*1000).toLocaleTimeString()} ${e.topic} ${JSON.stringify(e.data)}`),
   ...(rmu.commands||[]).map(c=>`${new Date(c.at*1000).toLocaleTimeString()} ↑${c.topic} ${c.result}`)].sort().slice(-12).reverse();
- const joined=items.join('\n');if(joined!==lastEvents){lastEvents=joined;const ol=$('rmuEvents');ol.innerHTML='';items.forEach(t=>{const li=document.createElement('li');li.textContent=t;ol.appendChild(li)})}
+ const joined=items.join('\n');if(joined!==lastEvents){lastEvents=joined;const ol=$('rmuEvents');ol.innerHTML='';items.forEach(t=>{const li=document.createElement('li');li.textContent=t;li.title=t;ol.appendChild(li)})}
  const v=rmu.video,dynAge=age('RobotDynamicStatus');
  window.rmuVideoText=v?`官方图传 3334 · ${v.width}×${v.height} · ${v.fps} FPS · ${v.kbps} kbit/s · 画面年龄 ${v.frame_age_ms??'—'} ms · 残帧 ${v.incomplete} · 坏包 ${v.bad_packets} · 解码错误 ${v.decode_errors}${v.error?' · '+v.error:''}`:'图传未启用';
+ const cv=rmu.custom_video;
+ window.rmuCustomText=cv&&cv.blocks?`自定义链路 0x0310 · ${cv.width}×${cv.height} · ${cv.fps} FPS · ${cv.kbps} kbit/s（上限 120）· ${cv.block_hz} 块/s · 丢块 ${cv.lost_blocks} · 坏块 ${cv.bad_blocks} · 画面年龄 ${cv.frame_age_ms??'—'} ms`:'自定义链路 0x0310 · 未收到视频块';
+ text('rmuCustomStats',window.rmuCustomText);
  text('rmuStats',`键鼠已发 ${rmu.sent_keyboard} 帧（其中零帧 ${rmu.zero_frames}）· 动态数据年龄 ${dynAge??'—'} ms · 解析失败 ${rmu.decode_errors}`);
  drawMap();
 }
 async function poll(){
  try{const d=await(await fetch('/api/rmu/state')).json();
   if(d.enabled===false){setTimeout(poll,3000);return}
-  rmu=d;for(const id of ['rmuPanel','rmuControl'])$(id).hidden=false;
-  const opt=$('rmuVideoOption');opt.hidden=false;opt.disabled=false;
+  const first=!rmu;rmu=d;for(const id of ['rmuPanel','rmuControl','rmuPad'])$(id).hidden=false;
+  for(const id of ['rmuVideoOption','rmuCustomOption']){const opt=$(id);opt.hidden=false;opt.disabled=false}
+  if(first){$('videoPath').value='rmu';syncMode()}
   if(driving&&!d.driving){driving=false;clearInput();if(document.pointerLockElement)document.exitPointerLock();renderPad();text('rmuCmdResult','键鼠接管已撤销：'+(d.error||'服务端撤销'))}
   renderHud();
  }catch{}
  setTimeout(poll,200);
 }
+// 视频源选官方图传或 0x0310 自定义链路即进入 RMU 界面；切回 JPEG/H.264 恢复模拟器界面
+function syncMode(){const v=$('videoPath').value,on=v==='rmu'||v==='custom';document.body.classList.toggle('rmu-mode',on);document.body.classList.toggle('custom-video',v==='custom');if(!on&&driving)setDriving(false)}
+$('videoPath').addEventListener('change',syncMode);
 renderPad();poll();
 })();
 </script></html>

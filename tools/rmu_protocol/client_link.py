@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 
@@ -17,6 +18,9 @@ from google.protobuf.message import DecodeError
 
 from . import rm_custom_client_pb2 as pb
 from .video import VideoReceiver
+from .custom_video import MAGIC as _CUSTOM_VIDEO_MAGIC, Receiver as CustomVideoReceiver
+
+CUSTOM_VIDEO_MAGIC = bytes([_CUSTOM_VIDEO_MAGIC])
 
 try:
     import paho.mqtt.client as mqtt
@@ -89,6 +93,8 @@ class RmuLink:
         self.command_log: list[dict] = []
         self.client = None
         self.video = VideoReceiver(video_host, video_port) if video_port else None
+        # 0x0310 自定义数据流里的低码率画面（机器人端发了才有；见 custom_video.py）
+        self.custom_video = CustomVideoReceiver()
         self._stop = threading.Event()
 
     # ---------------- 生命周期 ----------------
@@ -98,7 +104,10 @@ class RmuLink:
                 self.error = "缺少 paho-mqtt，请 pip install paho-mqtt==2.1.0"
         else:
             # 手册：clientID 填所连接机器人对应的 ID 编号；MQTT 3.1.1，无 TLS 无账号
-            self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=str(self.robot_id),
+            # 本机 mock/sim 的 broker 对复用 clientID 的连接会丢消息（实测同 id 只收到
+            # 25 条 vs 唯一 id 87 条），所以留一个覆盖口：RMU_CLIENT_ID=3-web。
+            client_id = os.environ.get("RMU_CLIENT_ID") or str(self.robot_id)
+            self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id,
                                       protocol=mqtt.MQTTv311, clean_session=True)
             self.client.on_connect = self._on_connect
             self.client.on_disconnect = self._on_disconnect
@@ -154,6 +163,8 @@ class RmuLink:
             return
         data = MessageToDict(msg, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
         if topic == "CustomByteBlock":
+            if msg.data[:1] == CUSTOM_VIDEO_MAGIC:
+                self.custom_video.push(msg.data)
             data = dict(size=len(msg.data), hex=msg.data[:64].hex())
         now = time.monotonic()
         with self.lock:
@@ -320,6 +331,7 @@ class RmuLink:
                 events=list(self.events[-10:]), commands=list(self.command_log[-10:]),
             )
         data["video"] = self.video.snapshot() if self.video else None
+        data["custom_video"] = self.custom_video.snapshot()
         return data
 
 

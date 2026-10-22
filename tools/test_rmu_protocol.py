@@ -12,6 +12,7 @@ import unittest
 import av
 from PIL import Image, ImageDraw
 
+from rmu_protocol import custom_video as cv
 from rmu_protocol import rm_custom_client_pb2 as pb
 from rmu_protocol.client_link import RmuLink, RateLimited, keys_to_mask, INPUT_TTL_S
 from rmu_protocol.mini_broker import MiniBroker
@@ -171,12 +172,83 @@ class BrokerTest(unittest.TestCase):
             broker.stop()
 
 
+def moving_frames(n, w=384, h=288):
+    for i in range(n):
+        img = Image.new("RGB", (w, h), "#1b2a3a")
+        draw = ImageDraw.Draw(img)
+        draw.rectangle((i * 7 % (w - 80), 90, i * 7 % (w - 80) + 80, 170), fill="#d04030")
+        draw.text((10, 10), f"frame {i}", fill="white")
+        yield av.VideoFrame.from_image(img)
+
+
+class CustomVideoTest(unittest.TestCase):
+    """0x0310：300 字节 × 50 Hz 的块格式、预算和丢块恢复。"""
+
+    def stream(self, frames=45, fps=15, loss=None):
+        blocks = []
+        sender = cv.Sender(blocks.append, fps=fps)
+        receiver = cv.Receiver()
+        delivered = 0
+        for index, frame in enumerate(moving_frames(frames)):
+            sender.push_frame(frame)
+            for _ in range(cv.BLOCK_HZ // fps):      # 50 Hz 节拍下每帧有 3 个发块时隙
+                block = sender.packer.next_block()
+                if block is None:
+                    continue
+                blocks.append(block)
+                if loss and loss(len(blocks)):
+                    continue
+                receiver.push(block)
+                delivered += 1
+        return sender, receiver, blocks
+
+    def test_blocks_fit_300_bytes_and_50hz_budget(self):
+        sender, receiver, blocks = self.stream()
+        self.assertTrue(all(len(b) <= cv.BLOCK_SIZE for b in blocks))
+        # 3 s 的画面最多 150 个块；积压不能越来越多（否则延迟无界）
+        self.assertLessEqual(len(blocks), 3 * cv.BLOCK_HZ)
+        self.assertLess(sender.packer.pending(), cv.PAYLOAD * 5)
+        self.assertGreaterEqual(receiver.decoded, 40)
+        self.assertEqual(receiver.decode_errors, 0)
+
+    def test_header_layout(self):
+        sender, _, blocks = self.stream(frames=2)
+        magic, seq0, first0 = cv.BLOCK_HEADER.unpack_from(blocks[0])
+        self.assertEqual((magic, seq0, first0), (cv.MAGIC, 0, 0))
+        self.assertEqual(cv.BLOCK_HEADER.unpack_from(blocks[1])[1], 1)
+
+    def test_lost_block_resyncs_and_heals(self):
+        lost = {10, 11}
+        _, receiver, _ = self.stream(frames=45, loss=lambda n: n in lost)
+        snap = receiver.snapshot()
+        self.assertEqual(snap["lost_blocks"], 2)
+        # 丢块那一帧丢掉，后面的帧照常解（帧内刷新会把坏区域补回来）
+        self.assertGreaterEqual(receiver.decoded, 35)
+
+    def test_garbage_rejected(self):
+        receiver = cv.Receiver()
+        for bad in (b"", b"V", b"X" + bytes(299), bytes([cv.MAGIC]) + bytes(300)):
+            receiver.push(bad)
+        self.assertEqual(receiver.decoded, 0)
+        self.assertEqual(receiver.unpacker.bad_blocks, 4)
+
+    def test_sender_restart_resets_decoder(self):
+        _, _, first = self.stream(frames=20)
+        _, _, second = self.stream(frames=20)
+        receiver = cv.Receiver()
+        for block in first[:len(first) // 2] + second:
+            receiver.push(block)
+        self.assertEqual(receiver.unpacker.restarts, 1)
+        self.assertGreaterEqual(receiver.decoded, 25)
+
+
 class ClientLinkTest(unittest.TestCase):
     def setUp(self):
         self.mqtt_port = free_port()
         self.video_port = free_port(socket.SOCK_DGRAM)
         self.engine = MockEngine(robot_id=3, mqtt_port=self.mqtt_port, video_to=("127.0.0.1", self.video_port),
-                                 width=320, height=240, fps=15, kbps=600).start()
+                                 width=320, height=240, fps=15, kbps=600, custom_video_size=(192, 144),
+                                 custom_video_fps=10, custom_video_kbps=64).start()
         self.link = RmuLink("127.0.0.1", self.mqtt_port, robot_id=3, video_port=self.video_port,
                             video_host="127.0.0.1").start()
         self.assertTrue(wait_until(lambda: self.link.snapshot()["connected"]), "应连上 Mock")
@@ -281,6 +353,14 @@ class ClientLinkTest(unittest.TestCase):
         v = self.link.snapshot()["video"]
         self.assertEqual((v["width"], v["height"]), (320, 240))
         self.assertEqual(v["decode_errors"], 0)
+
+    def test_custom_video_0x0310_end_to_end(self):
+        """Mock 经 MQTT CustomByteBlock 发 0x0310 视频块，客户端解出画面。"""
+        self.assertTrue(wait_until(lambda: self.link.custom_video.latest_jpeg() is not None, 6),
+                        self.link.custom_video.snapshot())
+        c = self.link.snapshot()["custom_video"]
+        self.assertEqual((c["width"], c["height"]), (192, 144))
+        self.assertEqual(c["bad_blocks"], 0)
 
 
 if __name__ == "__main__":

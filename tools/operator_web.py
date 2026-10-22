@@ -179,6 +179,12 @@ class Handler(BaseHTTPRequestHandler):
             data = rmu.snapshot() if rmu else dict(enabled=False)
             data.setdefault("enabled", True)
             self.send(200, json.dumps(data, ensure_ascii=False).encode())
+        elif self.path == "/rmu/custom_frame":
+            image = rmu.custom_video.latest_jpeg() if rmu else None
+            if image is None:
+                self.send(503, b'{}')
+            else:
+                self.send(200, image, "image/jpeg")
         elif self.path == "/rmu/frame":
             image = rmu.video.latest_jpeg() if rmu and rmu.video else None
             if image is None:
