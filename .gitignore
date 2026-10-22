@@ -17,3 +17,15 @@ __pycache__/
 /.deps/
 /dist/
 /runtime/
+# WorkBuddy 工作区记忆/缓存（本地状态，不入库）
+.workbuddy/
+
+# 调参/联调产物（统一放 .workbuddy/artifacts/）
+*.jsonl
+*.out
+*.err
+*.log
+/frame_now.png
+/armor_crop.png
+/demo_*.jpg
+/.dsh-acl-recovery/
