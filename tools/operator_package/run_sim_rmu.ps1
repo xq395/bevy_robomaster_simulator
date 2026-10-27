@@ -7,9 +7,9 @@
 #   3. operator_web.py                 —— 浏览器终端 http://127.0.0.1:5002/
 #   (4) rm_aim_sim_bridge.py           —— 只有要同时用模拟器通路（UDP 5001 / HTTP 5000）才需要
 #
-# 用法：powershell -ExecutionPolicy Bypass -File .\run_sim_rmu.ps1
+# 用法：双击 run_sim_rmu.bat（等价 powershell -ExecutionPolicy Bypass -File .\run_sim_rmu.ps1）
 #       -SimPath/-GodotPath 可覆盖；-NoWeb 不起终端；-Size/-Fps/-Kbps 调官方图传；
-#       -CustomSize/-CustomFps/-CustomKbps 调 0x0310（-CustomSize none 关闭）。
+#       -CustomSize/-CustomFps/-CustomKbps 调 0x0310（-CustomSize none 关闭）；-NoOpen 不自动开浏览器。
 
 param(
     [string]$GodotPath = 'F:\rm_aim_sim_ws\godot\Godot_v4.7.2-stable_win64_console.exe',
@@ -25,11 +25,14 @@ param(
     [int]$CustomFps = 15,
     [int]$CustomKbps = 96,
     [switch]$NoWeb,
+    [switch]$NoOpen,
     [switch]$SkipSim,
     [switch]$WithBridge
 )
 
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 默认按 OEM 代码页输出，配合 bat 里的 chcp 65001 会显示乱码
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $tools = Join-Path $root "tools"
 $procs = @()
@@ -100,6 +103,10 @@ if (-not $NoWeb) {
     $env:DAEDALUS_OPERATOR_PORT = "$WebPort"
     $env:OPERATOR_WEB_URL = "http://127.0.0.1:$WebPort/"
     Start-Child 'python' @('operator_web.py') $tools | Out-Null
+    if (-not $NoOpen) {
+        Start-Sleep -Seconds 2
+        try { Start-Process "http://127.0.0.1:$WebPort/" } catch { }
+    }
 }
 
 Write-Host ""

@@ -20,7 +20,12 @@ body.rmu-mode aside.panel{max-height:calc(100vh - 102px);overflow:auto;padding:1
 body.rmu-mode.custom-video #video{image-rendering:auto}
 #rmuControl h3{font-size:14px;margin:16px 0 6px}#rmuControl h3 small{font-weight:normal}#rmuMap{width:100%;background:#091321;border-radius:8px;cursor:crosshair;display:block}
 .row.compact{margin:6px 0;font-size:13px}#rmuControl details{margin:8px 0}#rmuControl summary{cursor:pointer;color:#a5b8d1;font-size:14px;padding:4px 0}
-#rmuEvents li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#rmuCmdResult:empty{display:none}
+#rmuEvents li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#rmuEvents li.warn{color:#ffd166}#rmuEvents li.bad{color:#ff8b8b}
+#rmuCmdResult:empty{display:none}.cmd-result{margin:8px 0;padding:6px 10px;border-radius:6px;font-size:14px;background:#0d1726;border:1px solid #293c58}
+.cmd-result[data-state=ok]{border-color:#35c28d;color:#6ddcb0}.cmd-result[data-state=fail]{border-color:#e25b6a;color:#ff8b8b}.cmd-result[data-state=wait]{color:#ffd166}
+.hud-banner.penalty{top:30%;background:#c9a227e6;color:#111;font-weight:bold}.hud-banner.penalty[hidden]{display:none}
+.hud-status{position:absolute;left:50%;transform:translateX(-50%);bottom:64px;display:flex;gap:12px;font-size:13px}.hud-status span:empty{display:none}
+.hud-status span{background:#0b1220cc;border-radius:6px;padding:2px 10px}
 #rmuConn.ok{color:#6ddcb0}#rmuConn.bad{color:#ff8b8b}
 .stage{position:relative}
 .hud{position:absolute;inset:0;pointer-events:none;font-size:13px;text-shadow:0 1px 2px #000}
@@ -114,6 +119,8 @@ body.rmu-mode.custom-video #video{image-rendering:auto}
  <div class="hud-side left"><h3>己方</h3><div id="rmuAlly"></div></div>
  <div class="hud-side right"><h3>对方</h3><div id="rmuEnemy"></div></div>
  <p class="hud-banner" id="rmuRespawn" role="status"></p>
+ <p class="hud-banner penalty" id="rmuPenalty" role="alert" hidden></p>
+ <div class="hud-status"><span id="rmuModules" class="bad"></span><span id="rmuBuffs"></span></div>
  <div class="hud-bottom">
   <div class="hud-box wide"><span>本机血量</span><b id="rmuHp">—</b><i class="bar"><u id="rmuHpBar"></u></i></div>
   <div class="hud-box wide"><span>热量</span><b id="rmuHeat">—</b><i class="bar"><u id="rmuHeatBar"></u></i></div>
@@ -161,7 +168,8 @@ body.rmu-mode.custom-video #video{image-rendering:auto}
 <button data-cmd='{"topic":"RobotPerformanceSelectionCommand","fields":{"shooter":1,"chassis":1}}'>冷却优先 + 血量优先</button>
 <button data-cmd='{"topic":"RobotPerformanceSelectionCommand","fields":{"shooter":2,"chassis":2}}'>爆发优先 + 功率优先</button>
 </div></details>
-<p id="rmuCmdResult" class="hint" role="status"></p>
+<p id="rmuCmdResult" class="cmd-result" role="status"></p>
+<p class="hint" id="rmuMechanisms"></p><p class="hint" id="rmuInjury"></p>
 <h3>事件 / 判罚 / 回执</h3><ol id="rmuEvents" reversed></ol>
 <details id="rmuDiag"><summary>诊断</summary>
 <p class="hint" id="rmuLinkState">RMU 协议 · 未连接</p>
@@ -331,11 +339,110 @@ async function heartbeat(){
 }
 heartbeat();
 
+// ---------- 指令回执：先显示"已发送"，再按下行数据确认生效 ----------
+// 协议里多数指令没有专门回执，只能看对应状态有没有变：兑换看发弹量/经济，
+// 部署看 DeployModeStatusSync，能量机关看 RuneStatusSync，哨兵有 SentryCtrlResult。
+const VERIFY={
+ CommonCommand:f=>{
+  const ammo=()=>(msg('RobotDynamicStatus')||{}).remaining_ammo,eco=()=>(msg('GlobalLogisticsStatus')||{}).remaining_economy;
+  const a0=ammo(),e0=eco(),rs=msg('RobotRespawnStatus')||{};
+  if(f.cmd_type===1||f.cmd_type===2||f.cmd_type===5)return{label:'兑换发弹量',ok:()=>ammo()>a0||eco()<e0};
+  if(f.cmd_type===6){const h0=(msg('RobotDynamicStatus')||{}).current_health;return{label:'远程兑换血量',ok:()=>(msg('RobotDynamicStatus')||{}).current_health>h0||eco()<e0}}
+  if(f.cmd_type===3||f.cmd_type===4){if(!rs.is_pending_respawn)return{label:'复活',fail:'当前不在待复活状态'};return{label:'复活',ok:()=>!(msg('RobotRespawnStatus')||{}).is_pending_respawn}}
+  return null},
+ HeroDeployModeEventCommand:f=>({label:f.mode?'进入部署':'退出部署',ok:()=>((msg('DeployModeStatusSync')||{}).status||0)===(f.mode?1:0)}),
+ RuneActivateCommand:()=>({label:'激活能量机关',ok:()=>((msg('RuneStatusSync')||{}).rune_status||1)>=2}),
+ SentryCtrlCommand:f=>{const seq=lastSeq('SentryCtrlResult');return{label:'哨兵指令',result:()=>{const e=newEvent('SentryCtrlResult',seq);return e?(e.data.result_code===0?'ok':'失败码 '+e.data.result_code):null}}},
+ DartCommand:f=>({label:'飞镖',ok:()=>{const d=msg('DartSelectTargetStatusSync')||{};return f.target_id!=null?d.target_id===f.target_id:((d.open||0)>0)===!!f.open}}),
+ AirSupportCommand:()=>({label:'空中支援',ok:()=>((msg('AirSupportStatusSync')||{}).airsupport_status||0)===1}),
+ RobotPerformanceSelectionCommand:f=>({label:'性能体系',ok:()=>{const p=msg('RobotPerformanceSelectionSync')||{};return p.shooter===f.shooter&&p.chassis===f.chassis}}),
+ MapClickCmd:()=>{const seq=lastSeq('MapClickInfo');return{label:'地图标记',result:()=>newEvent('MapClickInfo',seq)?'ok':null}},
+};
+function lastSeq(topic){return Math.max(0,...(rmu&&rmu.events||[]).filter(e=>e.topic===topic).map(e=>e.seq||0))}
+function newEvent(topic,after){return(rmu&&rmu.events||[]).filter(e=>e.topic===topic&&(e.seq||0)>after).pop()}
+let pending=null;
+function feedback(kind,textValue){const el=$('rmuCmdResult');el.textContent=textValue;el.dataset.state=kind}
+function startVerify(topic,fields){
+ const make=VERIFY[topic];const v=make?make(fields):null;
+ if(!v){feedback('sent',`${topic}：已发送（该指令协议无回执，无法确认生效）`);return}
+ if(v.fail){feedback('fail',`${v.label}：未执行 · ${v.fail}`);return}
+ pending=Object.assign(v,{topic,deadline:performance.now()+3000});feedback('wait',`${v.label}：已发送，等待生效…`)}
+function checkPending(){
+ if(!pending)return;
+ const r=pending.result?pending.result():(pending.ok()?'ok':null);
+ if(r==='ok'){feedback('ok',`✓ ${pending.label}：已生效`);pending=null}
+ else if(r){feedback('fail',`✗ ${pending.label}：${r}`);pending=null}
+ else if(performance.now()>pending.deadline){feedback('fail',`✗ ${pending.label}：3 秒内未见生效（经济不足 / 条件不满足 / 被裁判系统拒绝）`);pending=null}}
+// ---------- 状态条 / 告警 / 事件播报（Event、PenaltyInfo、Buff、模块状态及各同步消息） ----------
+const ROBOT_NAMES={1:'英雄',2:'工程',3:'步兵3',4:'步兵4',5:'步兵5',6:'空中',7:'哨兵',8:'飞镖',9:'雷达',10:'前哨站',11:'基地'};
+function robotName(id){id=Number(id);const blue=id>=100;const n=ROBOT_NAMES[id%100]||('#'+id);return(blue?'蓝':'红')+n}
+const DART_TARGET={1:'前哨站',2:'基地固定',3:'基地随机固定',4:'基地随机移动',5:'基地末端移动'};
+const ASSEMBLY_RESULT=['成功','拔出','超时','离开装配区过久','工程战亡','四级未在时限内完成','主动退出','未检测到能量单元','缓冲期到期'];
+function eventText(e){
+ const p=String(e.param||'').split(',');
+ switch(e.event_id){
+  case 1:return`击杀：${robotName(p[1])} 击毁 ${robotName(p[0])}`;
+  case 2:return`${robotName(p[0])} 被摧毁`;
+  case 3:return`大能量机关：${p[0]} 臂，平均 ${p[1]} 环`;
+  case 4:return`${p[0]==='2'?'大':'小'}能量机关已激活`;
+  case 5:return`己方英雄狙击伤害累计 ${p[0]}`;
+  case 6:return`对方英雄狙击伤害累计 ${p[0]}`;
+  case 7:return'对方呼叫空中支援';
+  case 8:return`对方空中支援被反制（己方剩余反制 ${p[0]} 次）`;
+  case 9:return`飞镖命中：${p[0]==='1'?'红':'蓝'}方击中${DART_TARGET[p[1]]||p[1]}`;
+  case 10:return'对方飞镖闸门开启';
+  case 11:return'⚠ 基地遭到攻击';
+  case 12:return'对方前哨站停转';
+  case 13:return'对方基地护甲展开';
+  case 14:return'对方请求四级装配，进入强制退出缓冲期';
+  case 15:return`装配结果：${ASSEMBLY_RESULT[Number(p[0])]??p[0]}`;
+  default:return`事件 ${e.event_id} ${e.param||''}`}}
+const PENALTY=['','黄牌','双方黄牌','红牌','超功率','超热量','超射速'];
+const BUFF={1:['攻击','%'],2:['防御','%'],3:['冷却','/s'],4:['底盘功率','%'],5:['回血','%'],6:['可兑换发弹','发'],7:['地形跨越','']};
+const MODULES={power_manager:'电源管理',rfid:'RFID',light_strip:'灯条',small_shooter:'17mm 发射',big_shooter:'42mm 发射',uwb:'定位',
+ armor:'装甲',video_transmission:'图传',capacitor:'电容',main_controller:'主控',laser_detection_module:'激光检测'};
+const RUNE=['','未激活','激活中','已激活'],POSTURE=['','进攻','防御','移动'],DART_OPEN=['关闭','开启中','已开启'];
+function eventLine(e){
+ const d=e.data||{};
+ if(e.topic==='Event')return{cls:d.event_id===11||d.event_id===1?'warn':'',text:eventText(d)};
+ if(e.topic==='PenaltyInfo')return{cls:'bad',text:`判罚：${PENALTY[d.penalty_type]||d.penalty_type}${d.penalty_effect_sec?` · ${d.penalty_effect_sec}s`:''} · 累计 ${d.total_penalty_num??'—'}`};
+ if(e.topic==='SentryCtrlResult')return{cls:d.result_code?'bad':'',text:`哨兵指令 ${d.command_id}：${d.result_code?'失败 '+d.result_code:'成功'}`};
+ if(e.topic==='MapClickInfo')return{cls:'',text:`地图标记 (${(d.map_x??0).toFixed?d.map_x.toFixed(1):d.map_x}, ${(d.map_y??0).toFixed?d.map_y.toFixed(1):d.map_y})`};
+ return{cls:'',text:e.topic}}
+let lastPenaltySeq=0,bannerUntil=0;
+function renderStatus(){
+ // 判罚横幅：新判罚到达时在画面中间显示 4 s
+ const pen=(rmu.events||[]).filter(e=>e.topic==='PenaltyInfo').pop();
+ if(pen&&pen.seq>lastPenaltySeq){lastPenaltySeq=pen.seq;bannerUntil=performance.now()+4000;
+  text('rmuPenalty',`${PENALTY[pen.data.penalty_type]||'判罚'}${pen.data.penalty_effect_sec?` · ${pen.data.penalty_effect_sec}s`:''}`)}
+ $('rmuPenalty').hidden=performance.now()>bannerUntil;
+ // 增益
+ const buffs=(rmu.buffs||[]).filter(b=>!b.robot_id||b.robot_id===rmu.robot_id);
+ text('rmuBuffs',buffs.length?buffs.map(b=>{const [n,u]=BUFF[b.buff_type]||['增益'+b.buff_type,''];return`${n} ${b.buff_level>0?'+':''}${b.buff_level}${u}${b.buff_max_time?` ${b.left_s}s`:''}`}).join('  '):'');
+ // 模块告警：只列不在线的
+ const mod=msg('RobotModuleStatus');
+ const bad=mod?Object.entries(MODULES).filter(([k])=>mod[k]!==undefined&&mod[k]!==1).map(([k,n])=>n+(mod[k]===2?'(安装不规范)':'离线')):[];
+ text('rmuModules',bad.length?'⚠ '+bad.join('、'):'');
+ // 机制状态
+ const rune=msg('RuneStatusSync'),dep=msg('DeployModeStatusSync'),sen=msg('SentryStatusSync'),dart=msg('DartSelectTargetStatusSync'),air=msg('AirSupportStatusSync'),perf=msg('RobotPerformanceSelectionSync');
+ const parts=[];
+ if(rune)parts.push(`能量机关 ${RUNE[rune.rune_status]||rune.rune_status}${rune.rune_status===2&&rune.activated_arms?` ${rune.activated_arms}臂`:''}`);
+ if(dep&&dep.status)parts.push('部署中');
+ if(sen)parts.push(`哨兵 ${POSTURE[sen.posture_id]||sen.posture_id}${sen.is_weakened?'（虚弱）':''}`);
+ if(dart)parts.push(`飞镖 ${DART_TARGET[dart.target_id]||dart.target_id} · ${DART_OPEN[dart.open]||dart.open}`);
+ if(air)parts.push(`空中支援 ${air.airsupport_status?'支援中':'待命'}${air.left_time?` 免费 ${air.left_time}s`:''}`);
+ if(perf)parts.push(`性能 射击${perf.shooter}/底盘${perf.chassis}`);
+ text('rmuMechanisms',parts.join(' · '));
+ const inj=msg('RobotInjuryStat');
+ text('rmuInjury',inj&&inj.total_damage?`本次存活受伤 ${inj.total_damage}${inj.killer_id?` · 击杀者 ${robotName(inj.killer_id)}`:''}`:'');
+}
 // ---------- 指令 ----------
 async function command(topic,fields,role){
  try{const r=await post('/api/rmu/command',{topic,fields,role});const d=await r.json();
-  text('rmuCmdResult',`${topic}：${r.ok?d.result:(d.error||('HTTP '+r.status))}`)}
- catch(e){text('rmuCmdResult',`${topic}：网络错误`)}
+  if(!r.ok){pending=null;feedback('fail',`✗ ${topic}：${d.error||('HTTP '+r.status)}`);return}
+  if(d.result!=='已发送'){pending=null;feedback('fail',`✗ ${topic}：${d.result}`);return}
+  startVerify(topic,fields)}
+ catch(e){pending=null;feedback('fail',`✗ ${topic}：网络错误`)}
 }
 document.querySelectorAll('[data-cmd]').forEach(b=>b.addEventListener('click',()=>{const c=JSON.parse(b.dataset.cmd);command(c.topic,c.fields)}));
 
@@ -348,12 +455,14 @@ canvas.addEventListener('click',e=>{
   map_x:Math.round(p.x*100)/100,map_y:Math.round(p.y*100)/100},$('rmuRole').value);
 });
 let lastClick=null;
+const fieldImg=new Image();fieldImg.src='/rmu/field.png';
 function drawMap(){
  const x=canvas.getContext('2d'),W=canvas.width,H=canvas.height,sx=W/FIELD.w,sy=H/FIELD.h;
- x.clearRect(0,0,W,H);x.strokeStyle='#203650';x.lineWidth=1;
+ x.clearRect(0,0,W,H);if(fieldImg.complete&&fieldImg.naturalWidth)x.drawImage(fieldImg,0,0,W,H);
+ x.strokeStyle='#ffffff10';x.lineWidth=1;
  for(let i=0;i<=FIELD.w;i+=2){x.beginPath();x.moveTo(i*sx,0);x.lineTo(i*sx,H);x.stroke()}
  for(let j=0;j<=FIELD.h;j+=2){x.beginPath();x.moveTo(0,H-j*sy);x.lineTo(W,H-j*sy);x.stroke()}
- x.fillStyle='#e25b6a33';x.fillRect(0,0,3*sx,H);x.fillStyle='#4a8cff33';x.fillRect(W-3*sx,0,3*sx,H);
+ x.fillStyle='#e25b6a22';x.fillRect(0,0,3*sx,H);x.fillStyle='#4a8cff22';x.fillRect(W-3*sx,0,3*sx,H);
  x.fillStyle='#93a7c4';x.font='12px system-ui';x.fillText('红方',6,14);x.fillText('蓝方',W-34,14);
  const pos=msg('RobotPosition');
  if(pos&&pos.x!=null){const px=pos.x*sx,py=H-pos.y*sy,a=(pos.yaw||0)*Math.PI/180;
@@ -391,15 +500,17 @@ function renderHud(){
  if(gu){text('rmuBase',`${gu.base_health} / ${gu.outpost_health}`);text('rmuEnemyBase',`${gu.enemy_base_health} / ${gu.enemy_outpost_health}`);
   const hp=gu.robot_health||[];hpRows($('rmuAlly'),hp.slice(0,5),DEFAULT_MAX,'ally');hpRows($('rmuEnemy'),hp.slice(5,10),DEFAULT_MAX,'enemy')}
  text('rmuRespawn',rs&&rs.is_pending_respawn?`待复活：读条 ${rs.current_respawn_progress}/${rs.total_respawn_progress}${rs.can_free_respawn?' · 可免费复活':''}${rs.can_pay_for_respawn?` · 可花 ${rs.gold_cost_for_respawn} 金币立即复活`:''}`:'');
- const items=[...(rmu.events||[]).map(e=>`${new Date(e.at*1000).toLocaleTimeString()} ${e.topic} ${JSON.stringify(e.data)}`),
-  ...(rmu.commands||[]).map(c=>`${new Date(c.at*1000).toLocaleTimeString()} ↑${c.topic} ${c.result}`)].sort().slice(-12).reverse();
- const joined=items.join('\n');if(joined!==lastEvents){lastEvents=joined;const ol=$('rmuEvents');ol.innerHTML='';items.forEach(t=>{const li=document.createElement('li');li.textContent=t;li.title=t;ol.appendChild(li)})}
+ const items=[...(rmu.events||[]).map(e=>Object.assign({at:e.at},eventLine(e))),
+  ...(rmu.commands||[]).map(c=>({at:c.at,cls:'',text:`↑ ${c.topic} ${c.result}`}))].sort((a,b)=>a.at-b.at).slice(-12).reverse();
+ const joined=items.map(i=>i.at+i.text).join('\n');if(joined!==lastEvents){lastEvents=joined;const ol=$('rmuEvents');ol.innerHTML='';
+  items.forEach(i=>{const li=document.createElement('li');li.textContent=`${new Date(i.at*1000).toLocaleTimeString()} ${i.text}`;li.title=li.textContent;li.className=i.cls;ol.appendChild(li)})}
  const v=rmu.video,dynAge=age('RobotDynamicStatus');
  window.rmuVideoText=v?`官方图传 3334 · ${v.width}×${v.height} · ${v.fps} FPS · ${v.kbps} kbit/s · 画面年龄 ${v.frame_age_ms??'—'} ms · 残帧 ${v.incomplete} · 坏包 ${v.bad_packets} · 解码错误 ${v.decode_errors}${v.error?' · '+v.error:''}`:'图传未启用';
  const cv=rmu.custom_video;
  window.rmuCustomText=cv&&cv.blocks?`自定义链路 0x0310 · ${cv.width}×${cv.height} · ${cv.fps} FPS · ${cv.kbps} kbit/s（上限 120）· ${cv.block_hz} 块/s · 丢块 ${cv.lost_blocks} · 坏块 ${cv.bad_blocks} · 画面年龄 ${cv.frame_age_ms??'—'} ms`:'自定义链路 0x0310 · 未收到视频块';
  text('rmuCustomStats',window.rmuCustomText);
  text('rmuStats',`键鼠已发 ${rmu.sent_keyboard} 帧（其中零帧 ${rmu.zero_frames}）· 动态数据年龄 ${dynAge??'—'} ms · 解析失败 ${rmu.decode_errors}`);
+ renderStatus();checkPending();
  drawMap();
 }
 async function poll(){

@@ -31,6 +31,8 @@ from fractions import Fraction
 
 import av
 
+from . import avsafe
+
 BLOCK_SIZE = 300
 BLOCK_HZ = 50
 MAGIC = 0x56
@@ -70,8 +72,7 @@ class Encoder:
         self.pts = 0
 
     def encode(self, frame: av.VideoFrame) -> list[tuple[bytes, bool]]:
-        if frame.width != self.width or frame.height != self.height or frame.format.name != "yuv420p":
-            frame = frame.reformat(width=self.width, height=self.height, format="yuv420p")
+        frame = avsafe.reformat(frame, width=self.width, height=self.height, format="yuv420p")  # 见 avsafe
         frame.pts = self.pts
         self.pts += 1
         return [(bytes(p), bool(p.is_keyframe)) for p in self.codec.encode(frame)]
@@ -140,10 +141,9 @@ class Unpacker:
         self.blocks += 1
         if self.expected is not None and seq != self.expected:
             missed = (seq - self.expected) % SEQ_MOD
-            if missed > SEQ_MOD // 2 and seq != 0:   # 迟到/重复的旧块
-                return []
-            if seq == 0:
-                # 发送端重启：序号从 0 重来，解码器也要换新的（参数集可能变了）
+            if seq == 0 or missed > SEQ_MOD // 2:
+                # 序号往回跳只可能是发送端重启（MQTT 有序，不会有迟到的旧块）。
+                # 客户端可能在重启后才重连，看不到 seq 0，所以不能只认 0。解码器要换新的。
                 self.restarts += 1
             else:
                 self.lost_blocks += missed
@@ -307,7 +307,7 @@ class Receiver:
                 return None
             if self._jpeg[1] == index:
                 return self._jpeg[0]
-        image = frame.to_image()
+        image = avsafe.to_image(frame)
         if image.width < self.jpeg_width:
             # 低分辨率画面在浏览器里会被拉伸，服务端先做一次平滑放大更好看
             image = image.resize((self.jpeg_width, round(image.height * self.jpeg_width / image.width)))

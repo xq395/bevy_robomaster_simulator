@@ -53,7 +53,7 @@ Copy-Tree (Join-Path $PSScriptRoot 'operator_package') $OutputDir
 $appDir = Join-Path $OutputDir 'app'
 New-Item -ItemType Directory -Path $appDir -Force | Out-Null
 foreach ($name in 'operator_web.py', 'operator_ui.html', 'narrowband_video.py',
-                  'debug_web_windows.py', 'debug_web_windows_stream.js') {
+                  'debug_web_windows.py', 'debug_web_windows_stream.js', 'rmu_field.png') {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $appDir -Force
 }
 

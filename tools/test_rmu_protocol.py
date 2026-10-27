@@ -241,6 +241,16 @@ class CustomVideoTest(unittest.TestCase):
         self.assertEqual(receiver.unpacker.restarts, 1)
         self.assertGreaterEqual(receiver.decoded, 25)
 
+    def test_sender_restart_seen_mid_stream(self):
+        """客户端在发送端重启后才重连：看不到 seq 0，序号直接往回跳，也要能恢复。"""
+        _, _, first = self.stream(frames=40)
+        _, _, second = self.stream(frames=40)
+        receiver = cv.Receiver()
+        for block in first + second[len(second) // 3:]:
+            receiver.push(block)
+        self.assertEqual(receiver.unpacker.restarts, 1)
+        self.assertGreater(receiver.decoded, 35 + 10, "重启后应继续出帧")
+
 
 class ClientLinkTest(unittest.TestCase):
     def setUp(self):

@@ -26,6 +26,8 @@
 | 三件套部署包 | `tools/rm_aim_sim/bundle/`（模板）→ `tools/build_rm_aim_sim_bundle.ps1` → `dist/rm_aim_sim_bundle_<日期>.zip` |
 | 启动/打包 | `tools/operator_package/*`、`tools/build_operator_package.ps1` |
 | 协议字段校验 | `tools/rmu_protocol/verify_proto.py` |
+| 场地底图（从 `assets/GROUND.glb` 俯视烘焙，`/rmu/field.png`） | `tools/rmu_field_map.py` → `tools/rmu_field.png` |
+| 0x0301 自定义 UI 离线预览（电控排版用） | `tools/ui0301_preview.py`、`tools/ui0301_host/`（PC 上编译电控 `UI_print.c`） |
 
 ## 3. 本地运行
 
@@ -200,6 +202,9 @@ python tools\operator_web.py        # http://127.0.0.1:5002/
 5. **录制与复盘**：按时间戳落盘 ProtoBuf 与视频，赛后回放。
 6. **声音告警**：血量/复活/判罚。
 7. **.deps 重建**：OpenCV/OpenVINO 运行库 + `talos_sp_bridge.exe` + 视觉模型 IR，然后重打 `dist`。
+
+已做（2026-10-26）：P1 消息上屏（事件/判罚/增益/模块离线/机制/伤害）+ 指令生效核对；3334 停帧修复
+（PyAV 并发 `reformat` 死锁 → `avsafe` 全局锁，10 分钟浸泡通过）；场地几何底图；0x0301 离线预览。
 
 ### 前端重构要点（已实装，留作说明）
 

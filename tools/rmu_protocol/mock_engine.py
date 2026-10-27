@@ -25,6 +25,7 @@ from fractions import Fraction
 import av
 from PIL import Image, ImageDraw
 
+from . import avsafe
 from . import rm_custom_client_pb2 as pb
 from .mini_broker import MiniBroker
 from . import custom_video
@@ -58,6 +59,10 @@ class GameModel:
         self.pending_respawn = False
         self.respawn_progress = 0
         self.dead_since: dict[tuple[str, int], float] = {}
+        self.module_offline: str | None = None
+        self.module_offline_until = 0.0
+        self.damage_taken = 0
+        self.last_killer = 0
         self.perf_shooter, self.perf_chassis = 1, 1
         self.events: list[tuple[str, bytes]] = []
         self.last_keyboard: pb.KeyboardMouseControl | None = None
@@ -136,6 +141,8 @@ class GameModel:
     def _respawn(self):
         self.pending_respawn = False
         self.respawn_progress = 0
+        self.damage_taken = 0
+        self.last_killer = 0
         key = ("ally", self.slot if self.slot in MAX_HP else 3)
         self.health[key] = MAX_HP[key[1]]
 
@@ -151,9 +158,14 @@ class GameModel:
                 victim = random.choice(list(self.health))
                 if self.health[victim] > 0:
                     self.health[victim] = max(0, self.health[victim] - 10)
+                    if victim == key:
+                        self.damage_taken += 10
+                    if victim[0] == "ally" and victim[1] == 1 and random.random() < 0.3:
+                        self.events.append(("Event", pb.Event(event_id=11).SerializeToString()))  # 基地遭到攻击
                     if victim == key and self.health[victim] == 0:
                         self.pending_respawn = True
                         killer = (101 if not self.blue else 1)
+                        self.last_killer = killer
                         self.events.append(("Event", pb.Event(event_id=1, param=f"{self.robot_id},{killer}").SerializeToString()))
             # 其它单位阵亡 10 s 后回满，避免长时间运行后血条全部为 0
             now = time.monotonic()
@@ -165,6 +177,32 @@ class GameModel:
             if random.random() < dt * 0.2:
                 self.economy += 10
                 self.total_economy += 10
+            # 演示用的低频事件：约每 20 s 一次判罚/增益/模块掉线中的一种
+            if random.random() < dt * 0.05:
+                self._trigger(random.choice(("buff", "event", "penalty", "module")))
+            if self.module_offline and now > self.module_offline_until:
+                self.module_offline = None
+
+    def trigger(self, kind: str):
+        with self.lock:
+            self._trigger(kind)
+
+    def _trigger(self, kind: str):
+        if kind == "penalty":
+            self.events.append(("PenaltyInfo", pb.PenaltyInfo(
+                penalty_type=random.choice((1, 4, 5)), penalty_effect_sec=10,
+                total_penalty_num=random.randint(1, 3)).SerializeToString()))
+        elif kind == "buff":
+            self.events.append(("Buff", pb.Buff(robot_id=self.robot_id, buff_type=random.choice((1, 2, 3, 5)),
+                                                buff_level=random.choice((25, 50)), buff_max_time=30,
+                                                buff_left_time=30).SerializeToString()))
+        elif kind == "module":
+            self.module_offline = random.choice(("uwb", "video_transmission", "capacitor"))
+            self.module_offline_until = time.monotonic() + 8
+        elif kind == "event":
+            event_id = random.choice((2, 4, 7, 9, 12))
+            param = {2: "111", 4: "1", 9: "1,1"}.get(event_id, "")
+            self.events.append(("Event", pb.Event(event_id=event_id, param=param).SerializeToString()))
 
     # ---- 下行消息 ----
     def elapsed(self) -> int:
@@ -209,12 +247,17 @@ class GameModel:
         with self.lock:
             yield "GlobalLogisticsStatus", pb.GlobalLogisticsStatus(remaining_economy=self.economy, total_economy_obtained=self.total_economy, tech_level=1, encryption_level=1)
             yield "GlobalSpecialMechanism", pb.GlobalSpecialMechanism()
-            yield "RobotInjuryStat", pb.RobotInjuryStat(total_damage=0)
+            yield "RobotInjuryStat", pb.RobotInjuryStat(total_damage=self.damage_taken,
+                                                        small_projectile_damage=self.damage_taken,
+                                                        killer_id=self.last_killer)
             yield "RobotRespawnStatus", pb.RobotRespawnStatus(
                 is_pending_respawn=self.pending_respawn, total_respawn_progress=10,
                 current_respawn_progress=int(self.respawn_progress), can_free_respawn=self.respawn_progress >= 10,
                 gold_cost_for_respawn=100, can_pay_for_respawn=self.economy >= 100)
-            yield "RobotModuleStatus", pb.RobotModuleStatus(**{f.name: 1 for f in pb.RobotModuleStatus.DESCRIPTOR.fields})
+            modules = {f.name: 1 for f in pb.RobotModuleStatus.DESCRIPTOR.fields}
+            if self.module_offline:
+                modules[self.module_offline] = 0
+            yield "RobotModuleStatus", pb.RobotModuleStatus(**modules)
             yield "RobotPosition", pb.RobotPosition(x=self.x, y=self.y, z=0.0, yaw=self.yaw, robot_id=self.robot_id)
             yield "TechCoreMotionStateSync", pb.TechCoreMotionStateSync(maximum_difficulty_level=1, basic_state=1)
             yield "RobotPerformanceSelectionSync", pb.RobotPerformanceSelectionSync(shooter=self.perf_shooter, chassis=self.perf_chassis)
@@ -264,10 +307,10 @@ class FrameSource:
                 with urllib.request.urlopen(self.source, timeout=0.3) as r:
                     image = Image.open(io.BytesIO(r.read())).convert("RGB")
                 self.source_ok = True
-                return av.VideoFrame.from_image(image.resize((self.width, self.height)))
+                return avsafe.from_image(image.resize((self.width, self.height)))
             except (OSError, ValueError):
                 self.source_ok = False
-        return av.VideoFrame.from_image(self.test_pattern(index))
+        return avsafe.from_image(self.test_pattern(index))
 
     def test_pattern(self, index: int) -> Image.Image:
         image = Image.new("RGB", (self.width, self.height), "#10202c")
@@ -290,7 +333,7 @@ class FrameSource:
                 frame = self.grab(self.index)
             except Exception as exc:  # noqa: BLE001 - 单帧失败不该让采集线程退出
                 print(f"图传采集失败：{type(exc).__name__}: {exc}", flush=True)
-                frame = av.VideoFrame.from_image(self.test_pattern(self.index))
+                frame = avsafe.from_image(self.test_pattern(self.index))
             self.grab_ms = 0.8 * self.grab_ms + 0.2 * (time.monotonic() - started) * 1000
             with self.lock:
                 self.frame = frame
@@ -372,8 +415,7 @@ class VideoSender:
             if frame is None:
                 continue
             started = time.monotonic()
-            if frame.width != f.width or frame.height != f.height or frame.format.name != "yuv420p":
-                frame = frame.reformat(width=f.width, height=f.height, format="yuv420p")
+            frame = avsafe.reformat(frame, width=f.width, height=f.height, format="yuv420p")  # 见 avsafe：并发转换会死锁/崩溃
             frame.pts = pts
             pts += 1
             for packet in codec.encode(frame):
@@ -441,6 +483,9 @@ class MockEngine:
                                                custom_kbps) if custom_size else None)
 
     def _on_message(self, client_id: str, topic: str, payload: bytes):
+        if topic == "MockTrigger":           # 仅 Mock：测试用的确定性触发（payload = penalty/buff/module/event）
+            self.model.trigger(payload.decode(errors="ignore"))
+            return
         try:
             self.model.handle(topic, payload)
         except Exception:  # noqa: BLE001 - 坏包不应让引擎挂掉

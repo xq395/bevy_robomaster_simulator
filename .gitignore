@@ -29,3 +29,6 @@ __pycache__/
 /armor_crop.png
 /demo_*.jpg
 /.dsh-acl-recovery/
+
+# 0x0301 host build output
+tools/ui0301_host/out/

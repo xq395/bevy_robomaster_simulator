@@ -79,6 +79,8 @@ class RmuLink:
         self.latest_at: dict[str, float] = {}
         self.counts: dict[str, int] = {}
         self.events: list[dict] = []
+        self.event_seq = 0
+        self.buffs: dict[tuple, dict] = {}
         self.connected = False
         self.error = "未连接"
         self.decode_errors = 0
@@ -171,9 +173,14 @@ class RmuLink:
             self.latest[topic] = data
             self.latest_at[topic] = now
             self.counts[topic] = self.counts.get(topic, 0) + 1
-            if topic in ("Event", "PenaltyInfo", "SentryCtrlResult", "MapClickInfo", "Buff"):
-                self.events.append(dict(topic=topic, data=data, at=time.time()))
+            if topic in ("Event", "PenaltyInfo", "SentryCtrlResult", "MapClickInfo"):
+                self.event_seq += 1
+                self.events.append(dict(topic=topic, data=data, at=time.time(), seq=self.event_seq))
                 del self.events[:-EVENT_LOG]
+            elif topic == "Buff":
+                # 增益按 (机器人, 类型) 覆盖：前端要的是"当前有哪些增益"，不是流水账
+                key = (data.get("robot_id", 0), data.get("buff_type", 0))
+                self.buffs[key] = dict(data, at=now)
 
     # ---------------- 键鼠 ----------------
     def set_driving(self, on: bool):
@@ -329,6 +336,9 @@ class RmuLink:
                 messages={k: dict(data=v, age_ms=round((now - self.latest_at[k]) * 1000), count=self.counts[k])
                           for k, v in self.latest.items()},
                 events=list(self.events[-10:]), commands=list(self.command_log[-10:]),
+                buffs=[dict(b, left_s=max(0, round(b.get("buff_left_time", 0) - (now - b["at"]))))
+                       for b in self.buffs.values()
+                       if b.get("buff_left_time", 0) - (now - b["at"]) > 0 or not b.get("buff_max_time")],
             )
         data["video"] = self.video.snapshot() if self.video else None
         data["custom_video"] = self.custom_video.snapshot()

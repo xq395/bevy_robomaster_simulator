@@ -25,6 +25,8 @@ from fractions import Fraction
 
 import av
 
+from . import avsafe
+
 HEADER = struct.Struct(">HHI")
 MAX_PACKET = 1400
 MAX_PAYLOAD = MAX_PACKET - HEADER.size  # 1392
@@ -276,7 +278,7 @@ class VideoReceiver:
                 return None
             if self.jpeg is not None and self.jpeg_index == index:
                 return self.jpeg
-        image = frame.to_image()
+        image = avsafe.to_image(frame)
         if image.width > self.jpeg_width:
             image = image.resize((self.jpeg_width, round(image.height * self.jpeg_width / image.width)))
         out = io.BytesIO()

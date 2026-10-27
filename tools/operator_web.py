@@ -185,6 +185,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(503, b'{}')
             else:
                 self.send(200, image, "image/jpeg")
+        elif self.path == "/rmu/field.png":
+            field = Path(__file__).with_name("rmu_field.png")
+            if field.exists():
+                self.send(200, field.read_bytes(), "image/png")
+            else:
+                self.send(404, b'{}')
         elif self.path == "/rmu/frame":
             image = rmu.video.latest_jpeg() if rmu and rmu.video else None
             if image is None:

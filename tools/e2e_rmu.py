@@ -26,6 +26,18 @@ def state():
         return json.loads(r.read())
 
 
+def mock_trigger(kind):
+    """Mock 专用 topic：让 Mock 立刻产生一条判罚/增益/模块离线/事件。"""
+    import paho.mqtt.client as mqtt
+    port = int(os.environ.get("RMU_TEST_MQTT_PORT", "3343"))
+    c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"e2e-{kind}", protocol=mqtt.MQTTv311)
+    c.connect("127.0.0.1", port, 5)
+    c.loop_start()
+    c.publish("MockTrigger", kind.encode(), qos=1).wait_for_publish(2)
+    c.loop_stop()
+    c.disconnect()
+
+
 def wait(pred, timeout=5):
     end = time.time() + timeout
     while time.time() < end:
@@ -64,6 +76,8 @@ with sync_playwright() as p:
     cv = state()["custom_video"]
     check("0x0310 带宽 ≤ 120 kbit/s 且 ≤ 50 块/s", 0 < cv["kbps"] <= 120 and cv["block_hz"] <= 50,
           f"{cv['kbps']} kbit/s {cv['block_hz']} 块/s")
+    check("0x0310 画面在持续更新（非冻结）", cv["fps"] > 5 and (cv["frame_age_ms"] or 1e9) < 1000,
+          f"{cv['fps']} FPS, age {cv['frame_age_ms']} ms")
     page.select_option("#videoPath", "rmu")
 
     # 未接管：不发键鼠（上次运行可能留下接管，先显式撤销）
@@ -107,14 +121,31 @@ with sync_playwright() as p:
 
     # 指令：兑换发弹量 + 限频
     page.click("text=兑换 50 发 17mm")
-    check("指令发送", bool(wait(lambda: "已发送" in page.inner_text("#rmuCmdResult"), 2)), page.inner_text("#rmuCmdResult"))
+    check("兑换指令确认生效（发弹量/经济变化）",
+          bool(wait(lambda: "已生效" in page.inner_text("#rmuCmdResult"), 4)), page.inner_text("#rmuCmdResult"))
     time.sleep(0.15)
     # 连点两次（同一事件循环内），第二次必须被 10Hz 限频拒绝
     page.evaluate("() => { const b=[...document.querySelectorAll('[data-cmd]')].find(x=>x.textContent.includes('兑换 50 发 17mm')); b.click(); b.click(); }")
     check("10Hz 限频提示", bool(wait(lambda: "限频" in page.inner_text("#rmuCmdResult"), 2)), page.inner_text("#rmuCmdResult"))
+    time.sleep(0.3)                     # 让过 CommonCommand 的 10 Hz 限频，测的是"条件不满足"而不是限频
+    page.click("text=确认复活")
+    check("不满足条件的指令给出失败原因",
+          bool(wait(lambda: "未执行" in page.inner_text("#rmuCmdResult") or "未见生效" in page.inner_text("#rmuCmdResult"), 4)),
+          page.inner_text("#rmuCmdResult"))
     page.click("summary:has-text('哨兵')")
     page.click("text=哨兵防御姿态")
-    check("哨兵回执进入事件列表", bool(wait(lambda: "SentryCtrlResult" in page.inner_text("#rmuEvents"), 3)))
+    check("哨兵回执进入事件列表（可读文本）", bool(wait(lambda: "哨兵指令" in page.inner_text("#rmuEvents"), 3)))
+    check("哨兵指令按回执判定成功", bool(wait(lambda: "已生效" in page.inner_text("#rmuCmdResult"), 3)),
+          page.inner_text("#rmuCmdResult"))
+
+    # Mock 专用触发：判罚横幅 / 增益 / 模块离线 / 事件播报
+    for kind in ("penalty", "buff", "module", "event"):
+        mock_trigger(kind)
+    check("判罚横幅出现", bool(wait(lambda: page.is_visible("#rmuPenalty"), 3)))
+    check("增益显示在画面上", bool(wait(lambda: page.inner_text("#rmuBuffs").strip() != "", 3)), page.inner_text("#rmuBuffs"))
+    check("模块离线告警", bool(wait(lambda: "离线" in page.inner_text("#rmuModules"), 3)), page.inner_text("#rmuModules"))
+    check("事件列表是可读中文而非 JSON", "{" not in page.inner_text("#rmuEvents"), page.inner_text("#rmuEvents")[:120])
+    check("机制状态行", bool(wait(lambda: "能量机关" in page.inner_text("#rmuMechanisms"), 3)), page.inner_text("#rmuMechanisms"))
 
     # 地图点击 → MapClickCmd → Mock 回 MapClickInfo
     box = page.locator("#rmuMap").bounding_box()

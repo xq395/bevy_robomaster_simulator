@@ -1,5 +1,9 @@
 # 自定义终端 / 自定义 UI 现状报告
 
+> ⚠ **本文已被 `custom_client_plan_20261026.md` 取代。** 其中有 5 处结论在 2026-10-26 的核实中被修正
+> （0x0310 链路归属、官方图传可达性、遮挡规则结案、UI 工作量估计、规则原文依据）。
+> 请以新版为准，本文仅作历史留档。
+
 日期：2026-10-22　范围：`bevy_robomaster_simulator` 仓库 + 电控仓库中的裁判 UI 部分
 来源：zcode 会话（claude-opus-5-5）最后几轮讨论 + 本仓库 `docs/rmu_client_dev.md`、`tools/rm_aim_sim/README.md` 核对
 

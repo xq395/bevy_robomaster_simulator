@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import rm_aim_sim_bridge as bridge  # noqa: E402
+from rmu_protocol import avsafe  # noqa: E402
 from rmu_protocol import rm_custom_client_pb2 as pb  # noqa: E402
 import av  # noqa: E402
 import numpy  # noqa: E402
@@ -99,8 +100,9 @@ class SimModel(GameModel):
             self.last_keyboard, self.last_keyboard_at = message, time.monotonic()
             self.keyboard_count += 1
             self.last_input_at = time.monotonic()
-            self.yaw_cmd += message.mouse_x * self.mouse_yaw
-            self.pitch_cmd = max(-PITCH_LIMIT, min(PITCH_LIMIT, self.pitch_cmd + message.mouse_y * self.mouse_pitch))
+            # 手册：mouse_x 正 = 右，mouse_y 正 = 上；仿真里 yaw 增大是左转、pitch 负是抬头，两轴都取反。
+            self.yaw_cmd -= message.mouse_x * self.mouse_yaw
+            self.pitch_cmd = max(-PITCH_LIMIT, min(PITCH_LIMIT, self.pitch_cmd - message.mouse_y * self.mouse_pitch))
             self._send_command(self.yaw_cmd, self.pitch_cmd, bool(message.left_button_down))
 
     def _send_command(self, yaw: float, pitch: float, fire: bool):
@@ -200,9 +202,9 @@ class SimFrameSource(FrameSource):
 
     def _convert(self, pixels, width, height, channels):
         array = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(height, width, channels)
-        frame = av.VideoFrame.from_ndarray(array, format="rgba" if channels == 4 else "rgb24")
-        return frame.reformat(width=self.width, height=self.height, format="yuv420p",
-                              interpolation="FAST_BILINEAR")
+        frame = avsafe.from_ndarray(array, format="rgba" if channels == 4 else "rgb24")
+        return avsafe.reformat(frame, width=self.width, height=self.height, format="yuv420p",
+                               interpolation="FAST_BILINEAR")
 
     def _restore_window(self):
         now = time.monotonic()
